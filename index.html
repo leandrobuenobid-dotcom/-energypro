@@ -436,6 +436,7 @@ select option{background:var(--bg3)}
       <input type="hidden" id="lojaId">
       <div class="form-grid">
         <div class="form-group full"><label>Nome *</label><input type="text" id="lojaNome" placeholder="Ex: Restaurante Central"></div>
+        <div class="form-group full"><label>Nome Fantasia</label><input type="text" id="lojaFantasia" placeholder="Ex: Central Burger"></div>
         <div class="form-group"><label>Tipo de Medição *</label><select id="lojaTipo"><option value="GRID">GRID (Singapura)</option><option value="EQUATORIAL">Equatorial</option></select></div>
         <div class="form-group"><label>Status</label><select id="lojaStatus"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></div>
         <div class="form-group full"><label>Responsável</label><input type="text" id="lojaResp" placeholder="Nome do responsável"></div>
@@ -826,8 +827,9 @@ function openLojaModal(id=null){
   document.getElementById('lojaTipo').value='GRID';
   document.getElementById('lojaStatus').value='ativo';
   document.getElementById('lojaResp').value='';
+  document.getElementById('lojaFantasia').value='';
   document.getElementById('lojaModalTitle').textContent=id?'✏️ Editar Loja':'🏪 Nova Loja';
-  if(id){const l=lojas.find(x=>x.id===id);if(!l)return;document.getElementById('lojaId').value=l.id;document.getElementById('lojaNome').value=l.nome;document.getElementById('lojaTipo').value=l.tipo;document.getElementById('lojaStatus').value=l.status;document.getElementById('lojaResp').value=l.responsavel||'';}
+  if(id){const l=lojas.find(x=>x.id===id);if(!l)return;document.getElementById('lojaId').value=l.id;document.getElementById('lojaNome').value=l.nome;document.getElementById('lojaTipo').value=l.tipo;document.getElementById('lojaStatus').value=l.status;document.getElementById('lojaResp').value=l.responsavel||'';document.getElementById('lojaFantasia').value=l.nomeFantasia||'';}
   openModal('modalLoja');
 }
 
@@ -835,7 +837,7 @@ async function salvarLoja() {
   const nome=document.getElementById('lojaNome').value.trim();
   if(!nome){toast('Informe o nome','error');return;}
   const id=document.getElementById('lojaId').value;
-  const obj={id:id||newId(),nome,tipo:document.getElementById('lojaTipo').value,status:document.getElementById('lojaStatus').value,responsavel:document.getElementById('lojaResp').value.trim(),createdAt:new Date().toISOString()};
+  const obj={id:id||newId(),nome,nomeFantasia:document.getElementById('lojaFantasia').value.trim(),tipo:document.getElementById('lojaTipo').value,status:document.getElementById('lojaStatus').value,responsavel:document.getElementById('lojaResp').value.trim(),createdAt:new Date().toISOString()};
   if(id){const i=lojas.findIndex(l=>l.id===id);lojas[i]=obj;}
   else lojas.push(obj);
   save();
@@ -868,7 +870,7 @@ function renderLojas(){
     const tipoBadge=l.tipo==='GRID'?`<span class="badge badge-blue">GRID</span>`:`<span class="badge badge-purple">Equatorial</span>`;
     return `<tr>
       <td class="td-mono" style="color:var(--text3)">${l.id.slice(-4).toUpperCase()}</td>
-      <td><div style="font-weight:600">${l.nome}</div><div style="font-size:11px;color:var(--text3)">${l.responsavel||'—'}</div></td>
+      <td><div style="font-weight:600">${l.nome}</div><div style="font-size:11px;color:var(--text3)">${l.nomeFantasia||''}</div><div style="font-size:11px;color:var(--text3)">${l.responsavel||'—'}</div></td>
       <td>${tipoBadge}</td>
       <td class="td-mono">R$ ${fmt(getTarifa(l),3)}</td>
       <td class="td-mono">${ls.length}</td>

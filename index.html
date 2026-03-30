@@ -322,6 +322,40 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
+    <!-- ROW 1b: 5 novos KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:12px">
+      <div class="dash-kpi-card" style="border-top:3px solid #34d399">
+        <div class="dkc-label">MÉDIA POR LOJA</div>
+        <div class="dkc-value" id="kpi-media">—</div>
+        <div class="dkc-unit">kWh / loja</div>
+        <div class="dkc-delta neutral" id="kpi-media-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #fb923c">
+        <div class="dkc-label">MAIOR CRESCIMENTO</div>
+        <div class="dkc-value" id="kpi-crescimento-val">—</div>
+        <div class="dkc-unit" id="kpi-crescimento-loja" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+        <div class="dkc-delta up" id="kpi-crescimento-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #ef4444">
+        <div class="dkc-label">SEM LEITURA</div>
+        <div class="dkc-value" id="kpi-semleitura">—</div>
+        <div class="dkc-unit">lojas sem registro</div>
+        <div class="dkc-delta neutral" id="kpi-semleitura-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #a78bfa">
+        <div class="dkc-label">PROJEÇÃO PRÓX. MÊS</div>
+        <div class="dkc-value" id="kpi-projecao">—</div>
+        <div class="dkc-unit">kWh estimado</div>
+        <div class="dkc-delta neutral" id="kpi-projecao-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #34d399">
+        <div class="dkc-label">ECONOMIA GERADA</div>
+        <div class="dkc-value" id="kpi-economia">—</div>
+        <div class="dkc-unit">lojas economizaram</div>
+        <div class="dkc-delta down" id="kpi-economia-d">—</div>
+      </div>
+    </div>
+
     <!-- ROW 2: big chart + ranking -->
     <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-bottom:12px">
       <div class="card">
@@ -997,6 +1031,70 @@ function renderDashboard() {
   document.getElementById('kpi-kwh-d').innerHTML   = deltaHtml(pct(kwhFev,kwhJan));
   document.getElementById('kpi-valor-d').innerHTML = deltaHtml(pct(valFev,valJan));
 
+  // KPIs extras
+  const lojasComLeitura = new Set(fev.map(l=>l.estabId));
+  const lojasSemLeitura = lojas.filter(l=>l.status==='ativo'&&!lojasComLeitura.has(l.id));
+  const mediaKwh = ativos > 0 ? kwhFev / lojasComLeitura.size : 0;
+  const mediaKwhJan = jan.length > 0 ? kwhJan / new Set(jan.map(l=>l.estabId)).size : 0;
+
+  // Maior crescimento
+  let maiorCrescLoja = null, maiorCrescPct = 0;
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    if (ls.length < 2) return;
+    const ult = ls[ls.length-1], pen = ls[ls.length-2];
+    const idxUlt = todosPer.indexOf(ult.periodo), idxPen = todosPer.indexOf(pen.periodo);
+    if (idxUlt - idxPen !== 1) return;
+    const p = pct(ult.consumo, pen.consumo);
+    if (p !== null && p > maiorCrescPct) { maiorCrescPct = p; maiorCrescLoja = loja; }
+  });
+
+  // Projeção próximo mês (média dos últimos 3 meses)
+  const ultimos3per = periodos.slice(-3);
+  const mediaUlt3 = ultimos3per.length > 0
+    ? ultimos3per.reduce((s,p)=>s+leituras.filter(l=>l.periodo===p).reduce((s2,l)=>s2+(Number(l.consumo)||0),0),0) / ultimos3per.length
+    : 0;
+
+  // Economia gerada
+  let economiaTotalKwh = 0, lojasEconomizaram = 0;
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    if (ls.length < 2) return;
+    const ult = ls[ls.length-1], pen = ls[ls.length-2];
+    const idxUlt = todosPer.indexOf(ult.periodo), idxPen = todosPer.indexOf(pen.periodo);
+    if (idxUlt - idxPen !== 1) return;
+    if (ult.consumo < pen.consumo) {
+      economiaTotalKwh += pen.consumo - ult.consumo;
+      lojasEconomizaram++;
+    }
+  });
+
+  // Render novos KPIs
+  document.getElementById('kpi-media').textContent = fmt(mediaKwh, 1);
+  document.getElementById('kpi-media-d').innerHTML = deltaHtml(pct(mediaKwh, mediaKwhJan));
+
+  if (maiorCrescLoja) {
+    document.getElementById('kpi-crescimento-val').innerHTML = `+${maiorCrescPct.toFixed(1)}<span style="font-size:14px;margin-left:2px;color:var(--text3)">%</span>`;
+    document.getElementById('kpi-crescimento-loja').textContent = maiorCrescLoja.nome;
+    document.getElementById('kpi-crescimento-d').textContent = '▲ vs mês anterior';
+  } else {
+    document.getElementById('kpi-crescimento-val').textContent = '—';
+    document.getElementById('kpi-crescimento-loja').textContent = 'sem dados';
+  }
+
+  document.getElementById('kpi-semleitura').textContent = lojasSemLeitura.length;
+  document.getElementById('kpi-semleitura-d').innerHTML = lojasSemLeitura.length === 0
+    ? '<span class="dkc-delta down">✓ todas registradas</span>'
+    : '<span class="dkc-delta up">' + lojasSemLeitura.map(l=>l.nome).join(', ') + '</span>';
+
+  document.getElementById('kpi-projecao').innerHTML = fmt(mediaUlt3, 1) + '<span style="font-size:14px;margin-left:3px;color:var(--text3)">kWh</span>';
+  document.getElementById('kpi-projecao-d').innerHTML = `<span class="dkc-delta neutral">média últimos ${ultimos3per.length} meses</span>`;
+
+  document.getElementById('kpi-economia').textContent = lojasEconomizaram;
+  document.getElementById('kpi-economia-d').innerHTML = lojasEconomizaram > 0
+    ? `<span class="dkc-delta down">▼ ${fmt(economiaTotalKwh,1)} kWh economizados</span>`
+    : '<span class="dkc-delta neutral">nenhuma redução</span>';
+
   // Alertas — somente mês imediatamente anterior
   const todosPer = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
   const alertas=[];
@@ -1639,10 +1737,15 @@ function exportarUltimasLeiturasPDF() {
   tbody td { padding: 9px 8px; border-bottom: 1px solid #e8edf3; }
   tfoot td { padding: 10px 8px; background: #1a2332; color: #fff; font-weight: 700; }
   .footer { margin-top: 24px; font-size: 10px; color: #8a9ab0; text-align: center; border-top: 1px solid #e8edf3; padding-top: 12px; }
-  @media print { body { padding: 16px; } }
+  .no-print{display:flex;gap:10px;margin-bottom:16px}
+  @media print { .no-print{display:none!important} body { padding: 16px; } }
 </style>
 </head>
 <body>
+  <div class="no-print">
+    <a href="${window.location.href}" onclick="window.close();return false;" style="display:inline-flex;align-items:center;gap:8px;background:#1a6fd4;color:#fff;padding:9px 18px;border-radius:7px;text-decoration:none;font-size:13px;font-weight:700;font-family:Arial,sans-serif">← Voltar ao Sistema</a>
+    <button onclick="window.print()" style="display:inline-flex;align-items:center;gap:8px;background:#e67e00;color:#fff;padding:9px 18px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:Arial,sans-serif">🖨️ Imprimir / Salvar PDF</button>
+  </div>
   <div class="header">
     <div class="header-left">
       <h1>Singapura Shopping — Últimas Leituras</h1>
@@ -2015,13 +2118,24 @@ function estiloBasePDF() {
     .badge-eq{background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
     .up{color:#ef4444;font-weight:700}.down{color:#16a34a;font-weight:700}
     .footer{margin-top:20px;font-size:10px;color:#8a9ab0;text-align:center;border-top:1px solid #e8edf3;padding-top:10px}
-    @media print{body{padding:14px}}
+    .no-print{display:flex}
+    @media print{.no-print{display:none!important}body{padding:14px}}
     </style>`;
 }
 
 function cabecalhoPDF(titulo, subtitulo) {
   const dataGer = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-  return `<div class="header">
+  const urlSistema = window.location.href;
+  return `
+  <div class="no-print" style="margin-bottom:16px;display:flex;gap:10px;align-items:center">
+    <a href="javascript:window.close()" style="display:inline-flex;align-items:center;gap:8px;background:#1a6fd4;color:#fff;padding:9px 18px;border-radius:7px;text-decoration:none;font-size:13px;font-weight:700;font-family:Arial,sans-serif">
+      ← Voltar ao Sistema
+    </a>
+    <button onclick="window.print()" style="display:inline-flex;align-items:center;gap:8px;background:#e67e00;color:#fff;padding:9px 18px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:Arial,sans-serif">
+      🖨️ Imprimir / Salvar PDF
+    </button>
+  </div>
+  <div class="header">
     <div><h1>Singapura Shopping — ${titulo}</h1><p>${subtitulo}</p></div>
     <div class="header-right"><div>Gerado em: ${dataGer}</div><div style="margin-top:4px;font-weight:700;color:#1a6fd4">EnergyPro</div></div>
   </div>`;

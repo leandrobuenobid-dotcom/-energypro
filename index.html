@@ -759,14 +759,111 @@ select option{background:var(--bg3)}
 
   <!-- RESUMO -->
   <div class="page" id="page-resumo">
-    <div class="card" style="margin-bottom:18px">
-      <div class="card-header"><span class="card-title">Evolução Consolidada</span><span class="badge badge-blue">GRID + Equatorial</span></div>
-      <div class="card-body"><div style="height:260px"><canvas id="chartResumo"></canvas></div></div>
+
+    <!-- Botão exportar -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+      <button class="btn btn-primary" onclick="exportarRelGeral()">📥 Exportar Relatório PDF</button>
     </div>
-    <div class="card">
+
+    <!-- KPIs Principais -->
+    <div style="margin-bottom:10px;font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px">KPIs Principais</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div class="dash-kpi-card" style="border-top:3px solid #6c63ff">
+        <div class="dkc-label">CONSUMO TOTAL</div>
+        <div class="dkc-value" id="rs-kwh">—</div>
+        <div class="dkc-unit">kWh</div>
+        <div class="dkc-delta" id="rs-kwh-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #f59e0b">
+        <div class="dkc-label">VALOR TOTAL</div>
+        <div class="dkc-value" id="rs-valor">—</div>
+        <div class="dkc-unit">reais</div>
+        <div class="dkc-delta" id="rs-valor-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #38bdf8">
+        <div class="dkc-label">LOJAS ATIVAS</div>
+        <div class="dkc-value" id="rs-lojas">—</div>
+        <div class="dkc-unit">estabelecimentos</div>
+        <div class="dkc-delta neutral" id="rs-lojas-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #ef4444">
+        <div class="dkc-label">ALERTAS</div>
+        <div class="dkc-value" id="rs-alertas">—</div>
+        <div class="dkc-unit">variações &gt;20%</div>
+        <div class="dkc-delta neutral">mês consecutivo</div>
+      </div>
+    </div>
+
+    <!-- KPIs Operacionais -->
+    <div style="margin-bottom:10px;font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px">KPIs Operacionais</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px">
+      <div class="dash-kpi-card" style="border-top:3px solid #34d399">
+        <div class="dkc-label">MÉDIA POR LOJA</div>
+        <div class="dkc-value" id="rs-media">—</div>
+        <div class="dkc-unit">kWh / loja</div>
+        <div class="dkc-delta" id="rs-media-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #fb923c">
+        <div class="dkc-label">MAIOR CRESCIMENTO</div>
+        <div class="dkc-value" id="rs-cresc-val">—</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin:4px 0 2px" id="rs-cresc-loja">—</div>
+        <div class="dkc-delta up" id="rs-cresc-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #ef4444">
+        <div class="dkc-label">SEM LEITURA</div>
+        <div class="dkc-value" id="rs-semleit">—</div>
+        <div class="dkc-unit">lojas sem registro</div>
+        <div class="dkc-delta neutral" id="rs-semleit-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #a78bfa">
+        <div class="dkc-label">PROJEÇÃO PRÓX. MÊS</div>
+        <div class="dkc-value" id="rs-proj">—</div>
+        <div class="dkc-unit">kWh estimado</div>
+        <div class="dkc-delta" id="rs-proj-d">—</div>
+      </div>
+      <div class="dash-kpi-card" style="border-top:3px solid #34d399">
+        <div class="dkc-label">ECONOMIA GERADA</div>
+        <div class="dkc-value" id="rs-econ">—</div>
+        <div class="dkc-unit">lojas economizaram</div>
+        <div class="dkc-delta down" id="rs-econ-d">—</div>
+      </div>
+    </div>
+
+    <!-- Gráficos -->
+    <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:14px">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Evolução Consolidada</span><span class="badge badge-blue">GRID + Equatorial</span></div>
+        <div class="card-body"><div style="height:220px"><canvas id="chartResumo"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">GRID vs Equatorial</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tipo</th><th>Lojas</th><th>Consumo kWh</th><th>Valor R$</th><th>R$/kWh</th></tr></thead>
+            <tbody id="rs-tbodyTipo"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabela por período -->
+    <div class="card" style="margin-bottom:14px">
       <div class="card-header"><span class="card-title">Resumo por Período</span></div>
-      <div class="table-wrap"><table><thead><tr><th>Período</th><th>Lojas</th><th>Total kWh</th><th>Total R$</th><th>Tarifa Média</th><th>vs Anterior</th></tr></thead><tbody id="tbodyPeriodos"></tbody></table></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Período</th><th>Lojas</th><th>Total kWh</th><th>Total R$</th><th>Tarifa Média</th><th>vs Anterior</th></tr></thead>
+        <tbody id="tbodyPeriodos"></tbody></table>
+      </div>
     </div>
+
+    <!-- Ranking completo -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Ranking Completo — Último Período</span></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>#</th><th>Loja</th><th>Tipo</th><th>Período</th><th>Consumo kWh</th><th>Tarifa</th><th>Valor R$</th><th>vs Anterior</th></tr></thead>
+        <tbody id="rs-tbodyRanking"></tbody></table>
+      </div>
+    </div>
+
   </div>
 
   <!-- CONFIGURAÇÕES -->

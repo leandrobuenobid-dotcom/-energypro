@@ -278,10 +278,15 @@ select option{background:var(--bg3)}
   <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
     <!-- Botão Visão Geral -->
-    <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
-      <button class="btn btn-secondary" onclick="toggleRelVisaoGeral()" id="btnVisaoGeral">
-        📋 Mostrar Relatório de Visão Geral
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <button class="btn btn-ghost btn-sm" id="btnVoltarVisaoGeral" onclick="toggleRelVisaoGeral()" style="display:none">
+        ← Voltar ao Dashboard
       </button>
+      <div style="margin-left:auto">
+        <button class="btn btn-secondary" onclick="toggleRelVisaoGeral()" id="btnVisaoGeral">
+          📋 Mostrar Relatório de Visão Geral
+        </button>
+      </div>
     </div>
 
     <div id="setupBanner" class="setup-banner" style="display:none">
@@ -1814,468 +1819,122 @@ function gerarRelatorio(){
 // ============================================================
 let chartResumoI=null;
 function renderResumo(){
-  const periodos=PERIODOS_ORDER.filter(p=>leituras.some(l=>l.periodo===p));
-  document.getElementById('tbodyPeriodos').innerHTML=periodos.map((p,i)=>{
+  const todosPer5  = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const ultimoPer5 = todosPer5[todosPer5.length-1];
+  const penultPer5 = todosPer5[todosPer5.length-2];
+  const fevL5      = leituras.filter(l=>l.periodo===ultimoPer5);
+  const janL5      = leituras.filter(l=>l.periodo===penultPer5);
+  const kwhAt5     = fevL5.reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const valAt5     = fevL5.reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const kwhAnt5    = janL5.reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const valAnt5    = janL5.reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const ativos5    = lojas.filter(l=>l.status==='ativo').length;
+  const limite5    = config.alerta||20;
+
+  // Alertas
+  const alertas5=[];
+  lojas.forEach(loja=>{
+    const ls=getLeitsByLoja(loja.id);
+    for(let i=1;i<ls.length;i++){
+      const ia=todosPer5.indexOf(ls[i].periodo),ib=todosPer5.indexOf(ls[i-1].periodo);
+      if(ia-ib!==1) continue;
+      const p=pct(ls[i].consumo,ls[i-1].consumo);
+      if(p!==null&&Math.abs(p)>limite5) alertas5.push({loja,atual:ls[i],anterior:ls[i-1],variacao:p,tipo:p>0?'aumento':'queda'});
+    }
+  });
+
+  // Extras
+  const lojasComL5=new Set(fevL5.map(l=>l.estabId));
+  const lojasSemL5=lojas.filter(l=>l.status==='ativo'&&!lojasComL5.has(l.id));
+  const mediaKwh5=lojasComL5.size>0?kwhAt5/lojasComL5.size:0;
+  const mediaKwhJ5=new Set(janL5.map(l=>l.estabId)).size>0?kwhAnt5/new Set(janL5.map(l=>l.estabId)).size:0;
+  let maiorCrescL5=null,maiorCrescP5=0,econKwh5=0,lojasEcon5=0;
+  lojas.forEach(loja=>{
+    const ls=getLeitsByLoja(loja.id);
+    if(ls.length<2) return;
+    const ult=ls[ls.length-1],pen=ls[ls.length-2];
+    const ia=todosPer5.indexOf(ult.periodo),ib=todosPer5.indexOf(pen.periodo);
+    if(ia-ib!==1) return;
+    const p=pct(ult.consumo,pen.consumo);
+    if(p!==null&&p>maiorCrescP5){maiorCrescP5=p;maiorCrescL5=loja;}
+    if(ult.consumo<pen.consumo){econKwh5+=pen.consumo-ult.consumo;lojasEcon5++;}
+  });
+  const ult3per5=todosPer5.slice(-3);
+  const mediaUlt35=ult3per5.length>0?ult3per5.reduce((s,p)=>s+leituras.filter(l=>l.periodo===p).reduce((s2,l)=>s2+(Number(l.consumo)||0),0),0)/ult3per5.length:0;
+  const pctProj5=kwhAt5>0?pct(mediaUlt35,kwhAt5):null;
+  const tendProj5=pctProj5===null?'—':Math.abs(pctProj5)<3?'➡ Estável':pctProj5>0?'▲ Aumento':'▼ Queda';
+
+  // KPIs principais
+  document.getElementById('rs-kwh').innerHTML=fmt(kwhAt5,1)+'<span style="font-size:14px;margin-left:3px;color:var(--text3)">kWh</span>';
+  document.getElementById('rs-valor').textContent=fmtR(valAt5);
+  document.getElementById('rs-lojas').textContent=ativos5;
+  document.getElementById('rs-alertas').textContent=alertas5.length;
+  document.getElementById('rs-kwh-d').innerHTML=deltaHtml(pct(kwhAt5,kwhAnt5));
+  document.getElementById('rs-valor-d').innerHTML=deltaHtml(pct(valAt5,valAnt5));
+  document.getElementById('rs-lojas-d').innerHTML='<span class="dkc-delta neutral">'+lojas.length+' cadastradas</span>';
+
+  // KPIs operacionais
+  document.getElementById('rs-media').textContent=fmt(mediaKwh5,1);
+  document.getElementById('rs-media-d').innerHTML=deltaHtml(pct(mediaKwh5,mediaKwhJ5));
+  if(maiorCrescL5){
+    document.getElementById('rs-cresc-val').innerHTML='+'+maiorCrescP5.toFixed(1)+'<span style="font-size:14px;margin-left:2px;color:var(--text3)">%</span>';
+    document.getElementById('rs-cresc-loja').textContent=maiorCrescL5.nome;
+    document.getElementById('rs-cresc-d').textContent='▲ vs mês anterior';
+  }
+  document.getElementById('rs-semleit').textContent=lojasSemL5.length;
+  document.getElementById('rs-semleit-d').innerHTML=lojasSemL5.length===0?'<span class="dkc-delta down">✓ todas registradas</span>':'<span class="dkc-delta up">'+lojasSemL5.map(l=>l.nome).join(', ')+'</span>';
+  document.getElementById('rs-proj').innerHTML=fmt(mediaUlt35,1)+'<span style="font-size:14px;margin-left:3px;color:var(--text3)">kWh</span>';
+  document.getElementById('rs-proj-d').innerHTML='<span class="dkc-delta '+(pctProj5>0?'up':pctProj5<0?'down':'neutral')+'">'+tendProj5+' '+(pctProj5!==null?Math.abs(pctProj5).toFixed(1)+'%':'')+'</span>';
+  document.getElementById('rs-econ').textContent=lojasEcon5;
+  document.getElementById('rs-econ-d').innerHTML='<span class="dkc-delta down">▼ '+fmt(econKwh5,1)+' kWh</span>';
+
+  // GRID vs EQ
+  const gKwh5=fevL5.filter(l=>getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const gVal5=fevL5.filter(l=>getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const eKwh5=fevL5.filter(l=>getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const eVal5=fevL5.filter(l=>getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.valor)||0),0);
+  document.getElementById('rs-tbodyTipo').innerHTML=`
+    <tr><td><span class="badge badge-blue">GRID</span></td><td class="td-mono">${lojas.filter(l=>l.tipo==='GRID').length}</td><td class="td-mono" style="color:var(--accent)">${fmt(gKwh5,2)}</td><td class="td-mono" style="color:var(--warn)">${fmtR(gVal5)}</td><td class="td-mono">R$ ${gKwh5>0?fmt(gVal5/gKwh5,4):'—'}</td></tr>
+    <tr><td><span class="badge badge-purple">Equatorial</span></td><td class="td-mono">${lojas.filter(l=>l.tipo==='EQUATORIAL').length}</td><td class="td-mono" style="color:var(--accent)">${fmt(eKwh5,2)}</td><td class="td-mono" style="color:var(--warn)">${fmtR(eVal5)}</td><td class="td-mono">R$ ${eKwh5>0?fmt(eVal5/eKwh5,4):'—'}</td></tr>
+    <tr style="background:var(--bg3)"><td style="font-weight:700">TOTAL</td><td class="td-mono">${lojas.length}</td><td class="td-mono" style="font-weight:700;color:var(--accent)">${fmt(kwhAt5,2)}</td><td class="td-mono" style="font-weight:700;color:var(--warn)">${fmtR(valAt5)}</td><td class="td-mono">R$ ${kwhAt5>0?fmt(valAt5/kwhAt5,4):'—'}</td></tr>`;
+
+  // Ranking completo
+  const ranking5=lojas.map(loja=>{const ls=getLeitsByLoja(loja.id);const ult=ls[ls.length-1];const ant=ls[ls.length-2];if(!ult)return null;return{loja,leitura:ult,anterior:ant};}).filter(Boolean).sort((a,b)=>b.leitura.consumo-a.leitura.consumo);
+  document.getElementById('rs-tbodyRanking').innerHTML=ranking5.map((x,i)=>{
+    const p5=x.anterior?pct(x.leitura.consumo,x.anterior.consumo):null;
+    const vs=p5===null?'—':p5>0?'<span class="delta-pos">▲'+p5.toFixed(1)+'%</span>':'<span class="delta-neg">▼'+Math.abs(p5).toFixed(1)+'%</span>';
+    const med=['🥇','🥈','🥉'][i]||(i+1)+'º';
+    return '<tr><td style="text-align:center">'+med+'</td><td style="font-weight:600">'+x.loja.nome+'</td><td>'+(x.loja.tipo==='GRID'?'<span class="badge badge-blue">GRID</span>':'<span class="badge badge-purple">EQ</span>')+'</td><td><span class="per-badge">'+(PERIODOS_LABEL[x.leitura.periodo]||x.leitura.periodo)+'</span></td><td class="td-mono" style="color:var(--accent);font-weight:700">'+fmt(x.leitura.consumo,2)+'</td><td class="td-mono">R$ '+fmt(x.leitura.tarifa,3)+'</td><td class="td-mono" style="color:var(--warn)">'+fmtR(x.leitura.valor)+'</td><td>'+vs+'</td></tr>';
+  }).join('');
+
+  // Por períodos
+  document.getElementById('tbodyPeriodos').innerHTML=todosPer5.map((p,i)=>{
     const ls=leituras.filter(l=>l.periodo===p);
     const kwh=ls.reduce((s,l)=>s+(Number(l.consumo)||0),0);
     const val=ls.reduce((s,l)=>s+(Number(l.valor)||0),0);
-    const prevP=i>0?periodos[i-1]:null;
-    const prevKwh=prevP?leituras.filter(l=>l.periodo===prevP).reduce((s,l)=>s+(Number(l.consumo)||0),0):null;
-    return `<tr><td><span class="per-badge">${PERIODOS_LABEL[p]||p}</span></td><td class="td-mono">${ls.length}</td><td class="td-mono" style="color:var(--accent)">${fmt(kwh,2)}</td><td class="td-mono" style="color:var(--warn)">${fmtR(val)}</td><td class="td-mono">R$ ${kwh>0?fmt(val/kwh,3):'—'}</td><td>${deltaHtml(prevKwh?pct(kwh,prevKwh):null)}</td></tr>`;
+    const prevKwh=i>0?leituras.filter(l=>l.periodo===todosPer5[i-1]).reduce((s,l)=>s+(Number(l.consumo)||0),0):null;
+    return '<tr><td><span class="per-badge">'+(PERIODOS_LABEL[p]||p)+'</span></td><td class="td-mono">'+ls.length+'</td><td class="td-mono" style="color:var(--accent)">'+fmt(kwh,2)+'</td><td class="td-mono" style="color:var(--warn)">'+fmtR(val)+'</td><td class="td-mono">R$ '+(kwh>0?fmt(val/kwh,3):'—')+'</td><td>'+deltaHtml(prevKwh?pct(kwh,prevKwh):null)+'</td></tr>';
   }).join('');
+
+  // Chart
+  const labels=todosPer5.map(p=>PERIODOS_LABEL[p]||p);
+  const gridData=todosPer5.map(p=>leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.consumo)||0),0));
+  const eqData=todosPer5.map(p=>leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.consumo)||0),0));
   if(chartResumoI)chartResumoI.destroy();
   chartResumoI=new Chart(document.getElementById('chartResumo'),{
     type:'bar',
-    data:{labels:periodos.map(p=>PERIODOS_LABEL[p]||p),datasets:[
-      {label:'GRID',data:periodos.map(p=>leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.consumo)||0),0)),backgroundColor:'rgba(56,189,248,.3)',borderColor:'rgba(56,189,248,.9)',borderWidth:2,borderRadius:5,stack:'a'},
-      {label:'Equatorial',data:periodos.map(p=>leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.consumo)||0),0)),backgroundColor:'rgba(167,139,250,.3)',borderColor:'rgba(167,139,250,.9)',borderWidth:2,borderRadius:5,stack:'a'}
+    data:{labels,datasets:[
+      {label:'GRID',data:gridData,backgroundColor:'rgba(56,189,248,.4)',borderColor:'rgba(56,189,248,1)',borderWidth:1,borderRadius:4,stack:'s'},
+      {label:'Equatorial',data:eqData,backgroundColor:'rgba(167,139,250,.4)',borderColor:'rgba(167,139,250,1)',borderWidth:1,borderRadius:4,stack:'s'}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa3be',font:{family:'DM Mono',size:11}}}},scales:{x:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#9aa5be',font:{family:'DM Mono',size:11}},stacked:true},y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#9aa5be',font:{family:'DM Mono',size:11}},stacked:true}}}
-  });
-}
-
-// ============================================================
-//  CONFIGURAÇÕES
-// ============================================================
-function renderConfig(){
-  document.getElementById('cfgApiUrl').value=API_URL||'';
-  document.getElementById('cfgGrid').value=config.gridTarifa;
-  document.getElementById('cfgEq').value=config.eqTarifa;
-  document.getElementById('cfgAlerta').value=config.alerta;
-}
-function salvarApiUrl(){
-  const url=(document.getElementById('setupUrl')||document.getElementById('cfgApiUrl')).value.trim();
-  if(!url){toast('Informe a URL','error');return;}
-  API_URL=url;
-  LS.set('ep_api_url',API_URL);
-  document.getElementById('setupBanner').style.display='none';
-  toast('URL salva! Testando conexão...');
-  testarConexao();
-}
-function salvarConfig(){
-  config.gridTarifa=Number(document.getElementById('cfgGrid').value)||0.900497;
-  config.eqTarifa=Number(document.getElementById('cfgEq').value)||1.039051;
-  config.alerta=Number(document.getElementById('cfgAlerta').value)||20;
-  save(); toast('Configurações salvas!');
-  if(API_URL) apiCall('saveConfig',{config}).catch(()=>{});
-}
-
-// ============================================================
-//  ALERTAS RELATORIO
-// ============================================================
-let chartAlertasPeriodoInst = null;
-
-function renderAlertasRel() {
-  const limite = config.alerta || 20;
-  document.getElementById('arLimiteBadge').textContent = 'Limite: ' + limite + '%';
-
-  // Populate periodo filter
-  const selP = document.getElementById('arFiltroPeriodo');
-  const curP = selP.value;
-  selP.innerHTML = '<option value="">Todos os períodos</option>';
-  PERIODOS_ORDER.forEach(p => {
-    if (leituras.some(l => l.periodo === p)) {
-      const o = document.createElement('option');
-      o.value = p; o.textContent = PERIODOS_LABEL[p] || p;
-      selP.appendChild(o);
-    }
-  });
-  if (curP) selP.value = curP;
-
-  const filtroTipo = document.getElementById('arFiltroTipo').value;
-  const filtroPeriodo = document.getElementById('arFiltroPeriodo').value;
-
-  // Build alerts — somente comparando com o mês imediatamente anterior
-  const todosPeriodos = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
-  const alertas = [];
-  lojas.forEach(loja => {
-    const ls = getLeitsByLoja(loja.id);
-    for (let i = 1; i < ls.length; i++) {
-      // Verifica se os dois períodos são consecutivos na ordem real
-      const idxAtual    = todosPeriodos.indexOf(ls[i].periodo);
-      const idxAnterior = todosPeriodos.indexOf(ls[i-1].periodo);
-      if (idxAtual - idxAnterior !== 1) continue; // pula se não for mês seguinte
-      const p = pct(ls[i].consumo, ls[i-1].consumo);
-      if (p !== null && Math.abs(p) > limite) {
-        alertas.push({
-          loja,
-          atual: ls[i],
-          anterior: ls[i-1],
-          variacao: p,
-          tipo: p > 0 ? 'aumento' : 'queda',
-          impacto: ls[i].valor - ls[i-1].valor
-        });
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#9aa5be',font:{family:'DM Mono',size:11}}}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#9aa5be',font:{family:'DM Mono',size:11}},stacked:true},
+        y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#9aa5be',font:{family:'DM Mono',size:11}},stacked:true}
       }
     }
   });
-
-  // KPIs
-  const aumentos = alertas.filter(a => a.tipo === 'aumento');
-  const quedas   = alertas.filter(a => a.tipo === 'queda');
-  document.getElementById('arKpiTotal').textContent   = alertas.length;
-  document.getElementById('arKpiAumento').textContent = aumentos.length;
-  document.getElementById('arKpiQueda').textContent   = quedas.length;
-
-  // Filter for table
-  let filtered = alertas;
-  if (filtroTipo)    filtered = filtered.filter(a => a.tipo === filtroTipo);
-  if (filtroPeriodo) filtered = filtered.filter(a => a.atual.periodo === filtroPeriodo);
-  filtered = filtered.sort((a, b) => Math.abs(b.variacao) - Math.abs(a.variacao));
-
-  // Table
-  const tbody = document.getElementById('tbodyAlertas');
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon" style="font-size:32px;opacity:.3">—</div><div class="empty-title">Nenhum alerta encontrado</div></div></td></tr>';
-  } else {
-    tbody.innerHTML = filtered.map(a => {
-      const cor = a.tipo === 'aumento' ? 'var(--danger)' : 'var(--green)';
-      const seta = a.tipo === 'aumento' ? '▲' : '▼';
-      const badge = a.tipo === 'aumento'
-        ? '<span class="badge badge-danger">▲ Aumento</span>'
-        : '<span class="badge badge-green">▼ Queda</span>';
-      return `<tr>
-        <td style="font-weight:600">${a.loja.nome}</td>
-        <td>${badge}</td>
-        <td><span class="per-badge">${PERIODOS_LABEL[a.anterior.periodo]||a.anterior.periodo}</span></td>
-        <td class="td-mono">${fmt(a.anterior.consumo, 2)}</td>
-        <td><span class="per-badge">${PERIODOS_LABEL[a.atual.periodo]||a.atual.periodo}</span></td>
-        <td class="td-mono" style="color:${cor};font-weight:600">${fmt(a.atual.consumo, 2)}</td>
-        <td class="td-mono" style="color:${cor};font-weight:700">${seta} ${Math.abs(a.variacao).toFixed(1)}%</td>
-        <td class="td-mono" style="color:${a.impacto>0?'var(--danger)':'var(--green)'}">${a.impacto>0?'+':''}${fmtR(a.impacto)}</td>
-      </tr>`;
-    }).join('');
-  }
-
-  // Ranking lojas com mais alertas
-  const porLoja = {};
-  alertas.forEach(a => {
-    if (!porLoja[a.loja.id]) porLoja[a.loja.id] = { loja: a.loja, total: 0, aumentos: 0, quedas: 0 };
-    porLoja[a.loja.id].total++;
-    if (a.tipo === 'aumento') porLoja[a.loja.id].aumentos++;
-    else porLoja[a.loja.id].quedas++;
-  });
-  const ranking = Object.values(porLoja).sort((a,b) => b.total - a.total);
-  const maxA = ranking[0]?.total || 1;
-  document.getElementById('arRankingDiv').innerHTML = ranking.slice(0, 7).map((x, i) => `
-    <div class="rank-item">
-      <div class="rank-num ${['r1','r2','r3'][i]||'rn'}">${i+1}</div>
-      <div class="rank-info">
-        <div class="rank-name">${x.loja.nome}</div>
-        <div class="rank-sub">▲ ${x.aumentos} aumento${x.aumentos!==1?'s':''} · ▼ ${x.quedas} queda${x.quedas!==1?'s':''}</div>
-      </div>
-      <div class="rank-bar-wrap"><div class="rank-bar" style="width:${(x.total/maxA*100).toFixed(0)}%;background:var(--danger)"></div></div>
-      <div class="rank-val" style="color:var(--danger)">${x.total}</div>
-    </div>`).join('');
-
-  // Chart alertas por periodo
-  const periodos = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
-  const dadosAumento = periodos.map(p => alertas.filter(a => a.atual.periodo === p && a.tipo === 'aumento').length);
-  const dadosQueda   = periodos.map(p => alertas.filter(a => a.atual.periodo === p && a.tipo === 'queda').length);
-  if (chartAlertasPeriodoInst) chartAlertasPeriodoInst.destroy();
-  chartAlertasPeriodoInst = new Chart(document.getElementById('chartAlertasPeriodo'), {
-    type: 'bar',
-    data: {
-      labels: periodos.map(p => PERIODOS_LABEL[p] || p),
-      datasets: [
-        { label: 'Aumento', data: dadosAumento, backgroundColor: 'rgba(239,68,68,.4)', borderColor: '#ef4444', borderWidth: 1, borderRadius: 4, stack: 'a' },
-        { label: 'Queda',   data: dadosQueda,   backgroundColor: 'rgba(52,211,153,.4)', borderColor: '#34d399', borderWidth: 1, borderRadius: 4, stack: 'a' }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#9aa5be', font: { family: 'DM Mono', size: 10 } } } },
-      scales: {
-        x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#9aa5be', font: { family: 'DM Mono', size: 11 } }, stacked: true },
-        y: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#9aa5be', font: { family: 'DM Mono', size: 11 } }, stacked: true }
-      }
-    }
-  });
-}
-
-// ============================================================
-//  EXPORTAR ULTIMAS LEITURAS PDF
-// ============================================================
-function exportarUltimasLeiturasPDF() {
-  // Pega as últimas leituras (uma por loja, a mais recente)
-  const ultimas = [];
-  lojas.forEach(loja => {
-    const ls = getLeitsByLoja(loja.id);
-    if (ls.length > 0) ultimas.push({ loja, leitura: ls[ls.length - 1] });
-  });
-  ultimas.sort((a, b) => PERIODOS_ORDER.indexOf(b.leitura.periodo) - PERIODOS_ORDER.indexOf(a.leitura.periodo));
-
-  const totalKwh = ultimas.reduce((s, x) => s + (Number(x.leitura.consumo) || 0), 0);
-  const totalVal = ultimas.reduce((s, x) => s + (Number(x.leitura.valor) || 0), 0);
-  const dataGeracao = new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-
-  const linhas = ultimas.map((x, i) => `
-    <tr style="background:${i%2===0?'#f8fafc':'#ffffff'}">
-      <td>${x.loja.nome}</td>
-      <td style="text-align:center">${x.loja.tipo}</td>
-      <td style="text-align:center">${PERIODOS_LABEL[x.leitura.periodo] || x.leitura.periodo}</td>
-      <td style="text-align:center">${x.leitura.dataInicio} → ${x.leitura.dataFim}</td>
-      <td style="text-align:right">${fmt(x.leitura.leituraAnterior, 2)}</td>
-      <td style="text-align:right">${fmt(x.leitura.leituraAtual, 2)}</td>
-      <td style="text-align:right;font-weight:700;color:#1a6fd4">${fmt(x.leitura.consumo, 2)}</td>
-      <td style="text-align:right">R$ ${fmt(x.leitura.tarifa, 3)}</td>
-      <td style="text-align:right;font-weight:700;color:#e67e00">${fmtR(x.leitura.valor)}</td>
-    </tr>`).join('');
-
-  const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Relatório — Últimas Leituras</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: Arial, sans-serif; color: #1a2332; padding: 32px; font-size: 13px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 16px; border-bottom: 3px solid #1a6fd4; }
-  .header-left h1 { font-size: 22px; font-weight: 700; color: #1a6fd4; margin-bottom: 4px; }
-  .header-left p { font-size: 12px; color: #8a9ab0; }
-  .header-right { text-align: right; font-size: 11px; color: #8a9ab0; }
-  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
-  .kpi { background: #f0f4f8; border-radius: 8px; padding: 14px 16px; border-left: 4px solid #1a6fd4; }
-  .kpi-label { font-size: 10px; color: #8a9ab0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-  .kpi-value { font-size: 20px; font-weight: 700; color: #1a2332; }
-  .kpi.warn { border-left-color: #e67e00; }
-  .kpi.warn .kpi-value { color: #e67e00; }
-  .kpi.blue { border-left-color: #1a6fd4; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  thead th { background: #1a6fd4; color: #fff; padding: 10px 8px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-  tbody td { padding: 9px 8px; border-bottom: 1px solid #e8edf3; }
-  tfoot td { padding: 10px 8px; background: #1a2332; color: #fff; font-weight: 700; }
-  .footer { margin-top: 24px; font-size: 10px; color: #8a9ab0; text-align: center; border-top: 1px solid #e8edf3; padding-top: 12px; }
-  .no-print{display:flex;gap:10px;margin-bottom:16px}
-  @media print { .no-print{display:none!important} body { padding: 16px; } }
-</style>
-</head>
-<body>
-  <div class="no-print">
-    <a href="${window.location.href}" onclick="window.close();return false;" style="display:inline-flex;align-items:center;gap:8px;background:#1a6fd4;color:#fff;padding:9px 18px;border-radius:7px;text-decoration:none;font-size:13px;font-weight:700;font-family:Arial,sans-serif">← Voltar ao Sistema</a>
-    <button onclick="window.print()" style="display:inline-flex;align-items:center;gap:8px;background:#e67e00;color:#fff;padding:9px 18px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:Arial,sans-serif">🖨️ Imprimir / Salvar PDF</button>
-  </div>
-  <div class="header">
-    <div class="header-left">
-      <h1>Singapura Shopping — Últimas Leituras</h1>
-      <p>Relatório de consumo de energia elétrica · Última leitura por estabelecimento</p>
-    </div>
-    <div class="header-right">
-      <div>Gerado em: ${dataGeracao}</div>
-      <div style="margin-top:4px;font-weight:700;color:#1a6fd4">EnergyPro</div>
-    </div>
-  </div>
-
-  <div class="kpis">
-    <div class="kpi blue">
-      <div class="kpi-label">Total de Estabelecimentos</div>
-      <div class="kpi-value">${ultimas.length}</div>
-    </div>
-    <div class="kpi blue">
-      <div class="kpi-label">Consumo Total (kWh)</div>
-      <div class="kpi-value">${fmt(totalKwh, 2)}</div>
-    </div>
-    <div class="kpi warn">
-      <div class="kpi-label">Valor Total (R$)</div>
-      <div class="kpi-value">${fmtR(totalVal)}</div>
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Estabelecimento</th>
-        <th style="text-align:center">Tipo</th>
-        <th style="text-align:center">Período</th>
-        <th style="text-align:center">Intervalo</th>
-        <th style="text-align:right">Leit. Anterior</th>
-        <th style="text-align:right">Leit. Atual</th>
-        <th style="text-align:right">Consumo kWh</th>
-        <th style="text-align:right">Tarifa</th>
-        <th style="text-align:right">Valor R$</th>
-      </tr>
-    </thead>
-    <tbody>${linhas}</tbody>
-    <tfoot>
-      <tr>
-        <td colspan="6"><strong>TOTAL GERAL</strong></td>
-        <td style="text-align:right">${fmt(totalKwh, 2)} kWh</td>
-        <td></td>
-        <td style="text-align:right">${fmtR(totalVal)}</td>
-      </tr>
-    </tfoot>
-  </table>
-
-  <div class="footer">EnergyPro · Sistema de Gestão de Consumo de Energia · Singapura Shopping · Caldas Novas — GO</div>
-</body>
-</html>`;
-
-  const win = window.open('', '_blank');
-  win.document.write(html);
-  win.document.close();
-  setTimeout(() => win.print(), 600);
-}
-
-// ============================================================
-//  RELATORIO GERAL
-// ============================================================
-let rgChartEv = null, rgChartGr = null;
-
-function renderRelGeral() {
-  const limite = config.alerta || 20;
-  const periodos = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
-  const ultimoPer = periodos[periodos.length - 1];
-  const penultimoPer = periodos[periodos.length - 2];
-  const fevLeit = leituras.filter(l => l.periodo === ultimoPer);
-  const janLeit = leituras.filter(l => l.periodo === penultimoPer);
-
-  // Desc
-  document.getElementById('rgPeriodoDesc').textContent =
-    'Período de referência: ' + (PERIODOS_LABEL[ultimoPer] || ultimoPer) +
-    (penultimoPer ? ' · Comparativo: ' + (PERIODOS_LABEL[penultimoPer] || penultimoPer) : '');
-
-  // KPIs
-  const kwhAt  = fevLeit.reduce((s,l)=>s+(Number(l.consumo)||0),0);
-  const valAt  = fevLeit.reduce((s,l)=>s+(Number(l.valor)||0),0);
-  const kwhAnt = janLeit.reduce((s,l)=>s+(Number(l.consumo)||0),0);
-  const valAnt = janLeit.reduce((s,l)=>s+(Number(l.valor)||0),0);
-  const ativos = lojas.filter(l=>l.status==='ativo').length;
-
-  document.getElementById('rg-kwh').textContent   = fmt(kwhAt, 1);
-  document.getElementById('rg-valor').textContent  = fmtR(valAt);
-  document.getElementById('rg-lojas').textContent  = ativos;
-  document.getElementById('rg-lojas-d').innerHTML  = `<span class="dkc-delta neutral">${lojas.length} cadastradas</span>`;
-  document.getElementById('rg-kwh-d').innerHTML    = deltaHtml(pct(kwhAt, kwhAnt));
-  document.getElementById('rg-valor-d').innerHTML  = deltaHtml(pct(valAt, valAnt));
-
-  // Alertas
-  const todosPer = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
-  const alertas = [];
-  lojas.forEach(loja => {
-    const ls = getLeitsByLoja(loja.id);
-    for (let i = 1; i < ls.length; i++) {
-      const idxAt  = todosPer.indexOf(ls[i].periodo);
-      const idxAnt = todosPer.indexOf(ls[i-1].periodo);
-      if (idxAt - idxAnt !== 1) continue;
-      const p = pct(ls[i].consumo, ls[i-1].consumo);
-      if (p !== null && Math.abs(p) > limite)
-        alertas.push({ loja, atual: ls[i], anterior: ls[i-1], variacao: p, tipo: p>0?'aumento':'queda', impacto: ls[i].valor - ls[i-1].valor });
-    }
-  });
-  document.getElementById('rg-alertas').textContent = alertas.length;
-  document.getElementById('rgAlertasBadge').textContent = alertas.length;
-
-  // Chart evolução
-  const dataKwh = periodos.map(p => leituras.filter(l=>l.periodo===p).reduce((s,l)=>s+(Number(l.consumo)||0),0));
-  const dataVal = periodos.map(p => leituras.filter(l=>l.periodo===p).reduce((s,l)=>s+(Number(l.valor)||0),0));
-  if (rgChartEv) rgChartEv.destroy();
-  rgChartEv = new Chart(document.getElementById('rgChartEvolucao'), {
-    type:'bar',
-    data:{ labels: periodos.map(p=>PERIODOS_LABEL[p]||p), datasets:[
-      { label:'kWh', data:dataKwh, backgroundColor:'rgba(108,99,255,.35)', borderColor:'rgba(108,99,255,1)', borderWidth:1, borderRadius:4, yAxisID:'y' },
-      { label:'R$',  data:dataVal, type:'line', borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.08)', tension:.5, fill:true, pointRadius:3, pointBackgroundColor:'#f59e0b', borderWidth:2, yAxisID:'y1' }
-    ]},
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ labels:{ color:'#9aa5be', font:{ family:'DM Mono', size:10 } } } },
-      scales:{ x:{ grid:{ color:'rgba(255,255,255,.04)' }, ticks:{ color:'#9aa5be', font:{ family:'DM Mono', size:10 } } },
-        y:{ grid:{ color:'rgba(255,255,255,.04)' }, ticks:{ color:'#9aa5be', font:{ family:'DM Mono', size:10 } }, position:'left' },
-        y1:{ grid:{ display:false }, ticks:{ color:'#9aa5be', font:{ family:'DM Mono', size:10 } }, position:'right' } } }
-  });
-
-  // Chart GRID vs Equatorial
-  const gridData = periodos.map(p=>leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.consumo)||0),0));
-  const eqData   = periodos.map(p=>leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.consumo)||0),0));
-  if (rgChartGr) rgChartGr.destroy();
-  rgChartGr = new Chart(document.getElementById('rgChartGrid'), {
-    type:'bar',
-    data:{ labels: periodos.map(p=>PERIODOS_LABEL[p]||p), datasets:[
-      { label:'GRID',       data:gridData, backgroundColor:'rgba(56,189,248,.35)', borderColor:'rgba(56,189,248,1)', borderWidth:1, borderRadius:4 },
-      { label:'Equatorial', data:eqData,   backgroundColor:'rgba(167,139,250,.35)', borderColor:'rgba(167,139,250,1)', borderWidth:1, borderRadius:4 }
-    ]},
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ labels:{ color:'#9aa5be', font:{ family:'DM Mono', size:10 } } } },
-      scales:{ x:{ grid:{ color:'rgba(255,255,255,.04)' }, ticks:{ color:'#9aa5be', font:{ family:'DM Mono', size:10 } } },
-        y:{ grid:{ color:'rgba(255,255,255,.04)' }, ticks:{ color:'#9aa5be', font:{ family:'DM Mono', size:10 } } } } }
-  });
-
-  // Tabela últimas leituras
-  const ultimas = [];
-  lojas.forEach(loja => {
-    const ls = getLeitsByLoja(loja.id);
-    if (ls.length > 0) ultimas.push({ loja, leitura: ls[ls.length-1], anterior: ls[ls.length-2] });
-  });
-  ultimas.sort((a,b) => b.leitura.consumo - a.leitura.consumo);
-
-  document.getElementById('rgTbodyUltimas').innerHTML = ultimas.map(x => {
-    const p = x.anterior ? pct(x.leitura.consumo, x.anterior.consumo) : null;
-    const varH = p===null ? '—' : p>0 ? `<span class="delta-pos">▲${p.toFixed(1)}%</span>` : `<span class="delta-neg">▼${Math.abs(p).toFixed(1)}%</span>`;
-    return `<tr>
-      <td style="font-weight:600">${x.loja.nome}</td>
-      <td><span class="per-badge">${PERIODOS_LABEL[x.leitura.periodo]||x.leitura.periodo}</span></td>
-      <td class="td-mono" style="color:var(--accent)">${fmt(x.leitura.consumo,2)}</td>
-      <td class="td-mono" style="color:var(--warn)">${fmtR(x.leitura.valor)}</td>
-      <td>${varH}</td>
-    </tr>`;
-  }).join('');
-
-  // Tabela alertas
-  const alertasOrd = [...alertas].sort((a,b)=>Math.abs(b.variacao)-Math.abs(a.variacao));
-  document.getElementById('rgTbodyAlertas').innerHTML = alertasOrd.length === 0
-    ? '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:16px">Nenhum alerta</td></tr>'
-    : alertasOrd.map(a => {
-        const cor = a.tipo==='aumento' ? 'var(--danger)' : 'var(--green)';
-        return `<tr>
-          <td style="font-weight:600">${a.loja.nome}</td>
-          <td><span class="per-badge">${PERIODOS_LABEL[a.atual.periodo]||a.atual.periodo}</span></td>
-          <td class="td-mono" style="color:${cor};font-weight:700">${a.tipo==='aumento'?'▲':'▼'} ${Math.abs(a.variacao).toFixed(1)}%</td>
-          <td class="td-mono" style="color:${a.impacto>0?'var(--danger)':'var(--green)'}">${a.impacto>0?'+':''}${fmtR(a.impacto)}</td>
-        </tr>`;
-      }).join('');
-
-  // GRID vs Equatorial detalhe
-  const tipos = ['GRID','EQUATORIAL'];
-  document.getElementById('rgTbodyTipo').innerHTML = tipos.map(tipo => {
-    const lojasT = lojas.filter(l=>l.tipo===tipo);
-    const leitsT = fevLeit.filter(l=>getLoja(l.estabId)?.tipo===tipo);
-    const kwh = leitsT.reduce((s,l)=>s+(Number(l.consumo)||0),0);
-    const val = leitsT.reduce((s,l)=>s+(Number(l.valor)||0),0);
-    const tarifaMedia = kwh>0 ? val/kwh : 0;
-    const maior = leitsT.sort((a,b)=>b.consumo-a.consumo)[0];
-    const maiorLoja = maior ? getLoja(maior.estabId)?.nome : '—';
-    const cor = tipo==='GRID' ? '#38bdf8' : '#a78bfa';
-    return `<tr>
-      <td style="font-weight:700;color:${cor}">${tipo}</td>
-      <td class="td-mono">${lojasT.length}</td>
-      <td class="td-mono" style="color:var(--accent)">${fmt(kwh,2)}</td>
-      <td class="td-mono" style="color:var(--warn)">${fmtR(val)}</td>
-      <td class="td-mono">R$ ${fmt(tarifaMedia,3)}</td>
-      <td style="font-weight:600">${maiorLoja}</td>
-    </tr>`;
-  }).join('');
-
-  // Ranking completo
-  const ranking = lojas.map(loja => {
-    const ls = getLeitsByLoja(loja.id);
-    const ult = ls[ls.length-1];
-    const ant = ls[ls.length-2];
-    if (!ult) return null;
-    return { loja, leitura: ult, anterior: ant, consumo: ult.consumo };
-  }).filter(Boolean).sort((a,b)=>b.consumo-a.consumo);
-
-  document.getElementById('rgTbodyRanking').innerHTML = ranking.map((x,i) => {
-    const p = x.anterior ? pct(x.leitura.consumo, x.anterior.consumo) : null;
-    const varH = p===null ? '—' : p>0 ? `<span class="delta-pos">▲${p.toFixed(1)}%</span>` : `<span class="delta-neg">▼${Math.abs(p).toFixed(1)}%</span>`;
-    const medalha = ['🥇','🥈','🥉'][i] || (i+1);
-    return `<tr>
-      <td style="text-align:center">${medalha}</td>
-      <td style="font-weight:600">${x.loja.nome}</td>
-      <td>${x.loja.tipo==='GRID'?'<span class="badge badge-blue">GRID</span>':'<span class="badge badge-purple">Equatorial</span>'}</td>
-      <td><span class="per-badge">${PERIODOS_LABEL[x.leitura.periodo]||x.leitura.periodo}</span></td>
-      <td class="td-mono" style="color:var(--accent);font-weight:700">${fmt(x.leitura.consumo,2)}</td>
-      <td class="td-mono">R$ ${fmt(x.leitura.tarifa,3)}</td>
-      <td class="td-mono" style="color:var(--warn);font-weight:700">${fmtR(x.leitura.valor)}</td>
-      <td>${varH}</td>
-    </tr>`;
-  }).join('');
 }
 
 function exportarRelGeral() {
@@ -2529,14 +2188,18 @@ function salvarTarifaPadrao() {
 function toggleRelVisaoGeral() {
   const el  = document.getElementById('relVisaoGeralInline');
   const btn = document.getElementById('btnVisaoGeral');
+  const btnVoltar = document.getElementById('btnVoltarVisaoGeral');
   if (el.style.display === 'none') {
     el.style.display = 'block';
     btn.textContent  = '📋 Ocultar Relatório de Visão Geral';
+    if (btnVoltar) btnVoltar.style.display = 'inline-flex';
     renderRelVisaoGeralInline();
     setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   } else {
     el.style.display = 'none';
     btn.textContent  = '📋 Mostrar Relatório de Visão Geral';
+    if (btnVoltar) btnVoltar.style.display = 'none';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 }
 
@@ -3212,8 +2875,6 @@ function verificarLogin() {
   }
 }
 
-// Salva sessão ao logar
-const _tentarLoginOrig = tentarLogin;
 
 </script>
 </body>

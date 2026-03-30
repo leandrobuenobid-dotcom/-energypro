@@ -333,7 +333,7 @@ select option{background:var(--bg3)}
       <div class="dash-kpi-card" style="border-top:3px solid #fb923c">
         <div class="dkc-label">MAIOR CRESCIMENTO</div>
         <div class="dkc-value" id="kpi-crescimento-val">—</div>
-        <div class="dkc-unit" id="kpi-crescimento-loja" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin:4px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="kpi-crescimento-loja">—</div>
         <div class="dkc-delta up" id="kpi-crescimento-d">—</div>
       </div>
       <div class="dash-kpi-card" style="border-top:3px solid #ef4444">
@@ -533,6 +533,66 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- TARIFAS -->
+  <div class="page" id="page-tarifas">
+
+    <div class="alert alert-blue" style="margin-bottom:20px">
+      <span>ℹ️</span>
+      <span>As tarifas cadastradas aqui serão usadas automaticamente ao registrar novas leituras. Leituras já salvas não serão alteradas.</span>
+    </div>
+
+    <div class="grid-2">
+      <!-- GRID -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🔵 Tarifas GRID — Singapura Shopping</span>
+          <button class="btn btn-primary btn-sm" onclick="adicionarTarifa('GRID')">+ Nova Tarifa</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Período</th><th>Mês/Ano</th><th>R$/kWh</th><th>Vigência</th><th>Observação</th><th>Ações</th></tr></thead>
+            <tbody id="tbodyTarifasGrid"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- EQUATORIAL -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🟣 Tarifas Equatorial</span>
+          <button class="btn btn-primary btn-sm" onclick="adicionarTarifa('EQUATORIAL')">+ Nova Tarifa</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Período</th><th>Mês/Ano</th><th>R$/kWh</th><th>Vigência</th><th>Observação</th><th>Ações</th></tr></thead>
+            <tbody id="tbodyTarifasEq"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tarifa padrão -->
+    <div class="card" style="margin-top:18px">
+      <div class="card-header"><span class="card-title">⚙️ Tarifa Padrão (quando não há tarifa cadastrada para o período)</span></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div class="form-group">
+            <label>GRID — Tarifa Padrão (R$/kWh)</label>
+            <input type="number" id="tarifaPadraoGrid" step="0.001" placeholder="0.900497">
+            <span class="form-hint">Usada quando não há tarifa específica para o mês</span>
+          </div>
+          <div class="form-group">
+            <label>Equatorial — Tarifa Padrão (R$/kWh)</label>
+            <input type="number" id="tarifaPadraoEq" step="0.001" placeholder="1.039051">
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <button class="btn btn-primary" onclick="salvarTarifaPadrao()">Salvar Tarifas Padrão</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- RELATORIO GERAL -->
   <div class="page" id="page-relgeral">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
@@ -695,6 +755,69 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- MODAL TARIFA -->
+<div class="modal-overlay" id="modalTarifa">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="tarifaModalTitle">Nova Tarifa</span>
+      <span class="modal-close" onclick="closeModal('modalTarifa')">✕</span>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="tarifaId">
+      <input type="hidden" id="tarifaTipo">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Mês de Referência *</label>
+          <select id="tarifaPeriodo">
+            <option value="JAN">Janeiro</option>
+            <option value="FEV">Fevereiro</option>
+            <option value="MAR">Março</option>
+            <option value="ABR">Abril</option>
+            <option value="MAI">Maio</option>
+            <option value="JUN">Junho</option>
+            <option value="JUL">Julho</option>
+            <option value="AGO">Agosto</option>
+            <option value="SET">Setembro</option>
+            <option value="OUT">Outubro</option>
+            <option value="NOV">Novembro</option>
+            <option value="DEZ">Dezembro</option>
+          </select>
+          <span class="form-hint">Mês em que a tarifa será aplicada</span>
+        </div>
+        <div class="form-group">
+          <label>Ano de Referência *</label>
+          <select id="tarifaAno">
+            <option value="2024">2024</option>
+            <option value="2025">2025</option>
+            <option value="2026" selected>2026</option>
+            <option value="2027">2027</option>
+            <option value="2028">2028</option>
+          </select>
+          <span class="form-hint">Ano em que a tarifa será aplicada</span>
+        </div>
+        <div class="form-group full">
+          <label>Valor da Tarifa (R$/kWh) *</label>
+          <input type="number" id="tarifaValor" step="0.000001" placeholder="Ex: 0.900497">
+          <span class="form-hint">Use até 6 casas decimais para maior precisão</span>
+        </div>
+        <div class="form-group full">
+          <label>Data de Vigência</label>
+          <input type="date" id="tarifaVigencia">
+          <span class="form-hint">Data a partir da qual essa tarifa passa a valer</span>
+        </div>
+        <div class="form-group full">
+          <label>Observação (opcional)</label>
+          <input type="text" id="tarifaObs" placeholder="Ex: Reajuste anual ANEEL — Resolução 123/2026">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalTarifa')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarTarifa()">Salvar Tarifa</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODALS -->
 <div class="modal-overlay" id="modalLoja">
   <div class="modal">
@@ -723,7 +846,7 @@ select option{background:var(--bg3)}
       <div class="form-grid">
         <div class="form-group full"><label>Loja *</label><select id="leitLoja" onchange="onLojaSel()"><option value="">Selecione...</option></select></div>
         <div class="form-group"><label>Período *</label>
-          <select id="leitPeriodo">
+          <select id="leitPeriodo" onchange="onLojaSel()">
             <option value="OUT">Outubro</option><option value="NOV">Novembro</option><option value="DEZ">Dezembro</option>
             <option value="JAN">Janeiro</option><option value="FEV" selected>Fevereiro</option><option value="MAR">Março</option>
           </select>
@@ -979,7 +1102,7 @@ function hideLoading() {
 // ============================================================
 //  NAV
 // ============================================================
-const TITLES = {dashboard:'Dashboard',lojas:'Lojas',leituras:'Leituras',relatorios:'Relatório por Loja',alertasrel:'Relatório de Alertas',resumo:'Resumo Geral',relgeral:'Relatório Geral do Dashboard',configuracoes:'Configurações'};
+const TITLES = {dashboard:'Dashboard',lojas:'Lojas',leituras:'Leituras',relatorios:'Relatório por Loja',alertasrel:'Relatório de Alertas',resumo:'Resumo Geral',relgeral:'Relatório Geral do Dashboard',tarifas:'Gestão de Tarifas',configuracoes:'Configurações'};
 function nav(page) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -992,6 +1115,7 @@ function nav(page) {
   if(page==='relatorios')   populateRelSelect();
   if(page==='alertasrel')   renderAlertasRel();
   if(page==='relgeral')     renderRelGeral();
+  if(page==='tarifas')      renderTarifas();
   if(page==='resumo')       renderResumo();
   if(page==='configuracoes')renderConfig();
 }
@@ -1032,6 +1156,8 @@ function renderDashboard() {
   document.getElementById('kpi-valor-d').innerHTML = deltaHtml(pct(valFev,valJan));
 
   // KPIs extras
+  const todosPer = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const periodos  = todosPer;
   const lojasComLeitura = new Set(fev.map(l=>l.estabId));
   const lojasSemLeitura = lojas.filter(l=>l.status==='ativo'&&!lojasComLeitura.has(l.id));
   const mediaKwh = ativos > 0 ? kwhFev / lojasComLeitura.size : 0;
@@ -1096,7 +1222,6 @@ function renderDashboard() {
     : '<span class="dkc-delta neutral">nenhuma redução</span>';
 
   // Alertas — somente mês imediatamente anterior
-  const todosPer = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
   const alertas=[];
   lojas.forEach(loja=>{
     const ls=getLeitsByLoja(loja.id);
@@ -1141,7 +1266,7 @@ function renderDashboard() {
   }).join('');
 
   // Main Chart
-  const periodos=PERIODOS_ORDER.filter(p=>leituras.some(l=>l.periodo===p));
+  // periodos já declarado acima
   const dataKwh=periodos.map(p=>leituras.filter(l=>l.periodo===p).reduce((s,l)=>s+(Number(l.consumo)||0),0));
   const dataVal=periodos.map(p=>leituras.filter(l=>l.periodo===p).reduce((s,l)=>s+(Number(l.valor)||0),0));
   if(chartDashInst){chartDashInst.destroy();chartDashInst=null;}
@@ -1412,7 +1537,10 @@ function onLojaSel(){
   document.getElementById('leitTipoDisplay').value=loja?.tipo||'';
   const ultima=getUltima(id);
   document.getElementById('leitAnterior').value=ultima?fmt(ultima.leituraAtual,2):'0';
-  document.getElementById('leitTarifa').value=fmt(getTarifa(loja),3);
+  // Busca tarifa específica para o período selecionado
+  const periodo=document.getElementById('leitPeriodo').value;
+  const tarifaPer=getTarifaPeriodo(loja?.tipo||'GRID', periodo);
+  document.getElementById('leitTarifa').value=fmt(tarifaPer,6);
   calcLeitura();
 }
 
@@ -2088,6 +2216,131 @@ tfoot td{padding:8px 7px;background:#1a2332;color:#fff;font-weight:700}
   win.document.write(html);
   win.document.close();
   setTimeout(() => win.print(), 600);
+}
+
+// ============================================================
+//  TARIFAS POR PERÍODO
+// ============================================================
+
+// Estrutura: tarifas = [ {id, tipo, periodo, ano, valor, obs} ]
+let tarifas = LS.get('ep_tarifas', []);
+
+// Seed com tarifas reais da planilha
+if (!tarifas.length) {
+  tarifas = [
+    {id:'t001',tipo:'GRID',periodo:'OUT',ano:'2025',valor:1.15,obs:'Outubro 2025'},
+    {id:'t002',tipo:'GRID',periodo:'NOV',ano:'2025',valor:1.14,obs:'Novembro 2025'},
+    {id:'t003',tipo:'GRID',periodo:'DEZ',ano:'2025',valor:0.895701,obs:'Dezembro 2025'},
+    {id:'t004',tipo:'GRID',periodo:'JAN',ano:'2026',valor:0.86679,obs:'Janeiro 2026'},
+    {id:'t005',tipo:'GRID',periodo:'FEV',ano:'2026',valor:0.900497,obs:'Fevereiro 2026'},
+    {id:'t006',tipo:'EQUATORIAL',periodo:'FEV',ano:'2026',valor:1.039051,obs:'Fevereiro 2026'},
+  ];
+  LS.set('ep_tarifas', tarifas);
+}
+
+function getTarifaPeriodo(tipo, periodo) {
+  // Busca tarifa específica para o tipo e período
+  const found = tarifas.find(t => t.tipo === tipo && t.periodo === periodo);
+  if (found) return Number(found.valor);
+  // Fallback para tarifa padrão
+  return tipo === 'EQUATORIAL' ? config.eqTarifa : config.gridTarifa;
+}
+
+function renderTarifas() {
+  document.getElementById('tarifaPadraoGrid').value = config.gridTarifa;
+  document.getElementById('tarifaPadraoEq').value   = config.eqTarifa;
+
+  ['GRID','EQUATORIAL'].forEach(tipo => {
+    const lista = tarifas.filter(t=>t.tipo===tipo)
+      .sort((a,b)=>{
+        const ia=PERIODOS_ORDER.indexOf(a.periodo), ib=PERIODOS_ORDER.indexOf(b.periodo);
+        return ib - ia; // mais recente primeiro
+      });
+    const tbodyId = tipo === 'GRID' ? 'tbodyTarifasGrid' : 'tbodyTarifasEq';
+    const tbody = document.getElementById(tbodyId);
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon" style="font-size:28px;opacity:.3">—</div><div class="empty-title">Nenhuma tarifa cadastrada</div><div class="empty-sub">Clique em "+ Nova Tarifa" para adicionar</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = lista.map(t => `<tr>
+      <td><span class="per-badge">${PERIODOS_LABEL[t.periodo]||t.periodo}</span></td>
+      <td class="td-mono">${t.periodo}/${t.ano}</td>
+      <td class="td-mono" style="color:var(--accent);font-weight:700">R$ ${fmt(t.valor,6)}</td>
+      <td class="td-mono" style="color:var(--text3)">${t.vigencia||'—'}</td>
+      <td style="font-size:12px;color:var(--text3)">${t.obs||'—'}</td>
+      <td><div class="actions-col">
+        <button class="btn btn-secondary btn-sm" onclick="editarTarifa('${t.id}')">Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="excluirTarifa('${t.id}')">Excluir</button>
+      </div></td>
+    </tr>`).join('');
+  });
+}
+
+function adicionarTarifa(tipo) {
+  document.getElementById('tarifaId').value        = '';
+  document.getElementById('tarifaTipo').value      = tipo;
+  document.getElementById('tarifaPeriodo').value   = 'MAR';
+  document.getElementById('tarifaAno').value       = '2026';
+  document.getElementById('tarifaValor').value     = '';
+  document.getElementById('tarifaVigencia').value  = '';
+  document.getElementById('tarifaObs').value       = '';
+  document.getElementById('tarifaModalTitle').textContent = `Nova Tarifa — ${tipo}`;
+  openModal('modalTarifa');
+}
+
+function editarTarifa(id) {
+  const t = tarifas.find(x=>x.id===id);
+  if (!t) return;
+  document.getElementById('tarifaId').value        = t.id;
+  document.getElementById('tarifaTipo').value      = t.tipo;
+  document.getElementById('tarifaPeriodo').value   = t.periodo;
+  document.getElementById('tarifaAno').value       = t.ano;
+  document.getElementById('tarifaValor').value     = t.valor;
+  document.getElementById('tarifaVigencia').value  = t.vigencia||'';
+  document.getElementById('tarifaObs').value       = t.obs||'';
+  document.getElementById('tarifaModalTitle').textContent = `Editar Tarifa — ${t.tipo}`;
+  openModal('modalTarifa');
+}
+
+function salvarTarifa() {
+  const valor = Number(document.getElementById('tarifaValor').value);
+  if (!valor) { toast('Informe o valor da tarifa','error'); return; }
+  const id       = document.getElementById('tarifaId').value;
+  const tipo     = document.getElementById('tarifaTipo').value;
+  const periodo  = document.getElementById('tarifaPeriodo').value;
+  const ano      = document.getElementById('tarifaAno').value;
+  const vigencia = document.getElementById('tarifaVigencia').value;
+  const obs      = document.getElementById('tarifaObs').value.trim();
+
+  if (id) {
+    const idx = tarifas.findIndex(t=>t.id===id);
+    tarifas[idx] = {id,tipo,periodo,ano,valor,vigencia,obs};
+    toast('Tarifa atualizada!');
+  } else {
+    // Verifica se já existe tarifa para esse tipo/período/ano
+    const existe = tarifas.find(t=>t.tipo===tipo&&t.periodo===periodo&&t.ano===ano);
+    if (existe) { toast('Já existe tarifa para esse período. Edite a existente.','warn'); return; }
+    tarifas.push({id:newId(),tipo,periodo,ano,valor,vigencia,obs});
+    toast('Tarifa cadastrada!');
+  }
+  LS.set('ep_tarifas', tarifas);
+  closeModal('modalTarifa');
+  renderTarifas();
+}
+
+function excluirTarifa(id) {
+  if (!confirm('Excluir esta tarifa?')) return;
+  tarifas = tarifas.filter(t=>t.id!==id);
+  LS.set('ep_tarifas', tarifas);
+  renderTarifas();
+  toast('Tarifa removida','warn');
+}
+
+function salvarTarifaPadrao() {
+  config.gridTarifa = Number(document.getElementById('tarifaPadraoGrid').value)||0.900497;
+  config.eqTarifa   = Number(document.getElementById('tarifaPadraoEq').value)||1.039051;
+  save();
+  toast('Tarifas padrão salvas!');
 }
 
 // ============================================================

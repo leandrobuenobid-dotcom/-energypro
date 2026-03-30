@@ -327,14 +327,14 @@ select option{background:var(--bg3)}
       <div class="card">
         <div class="card-header">
           <span class="card-title">Evolução de Consumo por Período</span>
-          <span class="badge badge-blue">kWh + R$</span>
+          <div style="display:flex;gap:8px;align-items:center"><span class="badge badge-blue">kWh + R$</span><button class="btn btn-ghost btn-sm" onclick="exportarEvolucaoPDF()">Exportar PDF</button></div>
         </div>
         <div class="card-body" style="padding:12px"><div style="height:200px"><canvas id="chartDash"></canvas></div></div>
       </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Ranking · FEV/2026</span>
-          <span class="badge badge-green">Por Consumo</span>
+          <div style="display:flex;gap:8px;align-items:center"><span class="badge badge-green">Por Consumo</span><button class="btn btn-ghost btn-sm" onclick="exportarRankingPDF()">Exportar PDF</button></div>
         </div>
         <div id="rankingDiv" style="padding:8px 14px;max-height:240px;overflow-y:auto"></div>
       </div>
@@ -343,11 +343,11 @@ select option{background:var(--bg3)}
     <!-- ROW 3: GRID vs Equatorial + alertas + ultimas -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
       <div class="card">
-        <div class="card-header"><span class="card-title">GRID vs Equatorial</span></div>
+        <div class="card-header"><span class="card-title">GRID vs Equatorial</span><button class="btn btn-ghost btn-sm" onclick="exportarGridEqPDF()">Exportar PDF</button></div>
         <div class="card-body" style="padding:12px" id="tipoResumoDiv"></div>
       </div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Alertas de Variação</span></div>
+        <div class="card-header"><span class="card-title">Alertas de Variação</span><button class="btn btn-ghost btn-sm" onclick="exportarAlertasDashPDF()">Exportar PDF</button></div>
         <div class="card-body" style="padding:10px;max-height:220px;overflow-y:auto" id="alertasDiv"></div>
       </div>
       <div class="card">
@@ -1985,6 +1985,150 @@ tfoot td{padding:8px 7px;background:#1a2332;color:#fff;font-weight:700}
   win.document.write(html);
   win.document.close();
   setTimeout(() => win.print(), 600);
+}
+
+// ============================================================
+//  EXPORTAR PDFs DO DASHBOARD
+// ============================================================
+function abrirJanelaPDF(html) {
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => win.print(), 600);
+}
+
+function estiloBasePDF() {
+  return `
+    <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;color:#1a2332;padding:28px;font-size:12px}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;padding-bottom:14px;border-bottom:3px solid #1a6fd4}
+    .header h1{font-size:18px;font-weight:700;color:#1a6fd4;margin-bottom:3px}
+    .header p{font-size:11px;color:#8a9ab0}
+    .header-right{text-align:right;font-size:11px;color:#8a9ab0}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    thead th{background:#1a6fd4;color:#fff;padding:8px 7px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px}
+    tbody tr:nth-child(even){background:#f8fafc}
+    tbody td{padding:7px;border-bottom:1px solid #e8edf3}
+    tfoot td{padding:8px 7px;background:#1a2332;color:#fff;font-weight:700}
+    .badge-grid{background:#e0f7fe;color:#0369a1;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+    .badge-eq{background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+    .up{color:#ef4444;font-weight:700}.down{color:#16a34a;font-weight:700}
+    .footer{margin-top:20px;font-size:10px;color:#8a9ab0;text-align:center;border-top:1px solid #e8edf3;padding-top:10px}
+    @media print{body{padding:14px}}
+    </style>`;
+}
+
+function cabecalhoPDF(titulo, subtitulo) {
+  const dataGer = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  return `<div class="header">
+    <div><h1>Singapura Shopping — ${titulo}</h1><p>${subtitulo}</p></div>
+    <div class="header-right"><div>Gerado em: ${dataGer}</div><div style="margin-top:4px;font-weight:700;color:#1a6fd4">EnergyPro</div></div>
+  </div>`;
+}
+
+function rodapePDF() {
+  return `<div class="footer">EnergyPro · Sistema de Gestão de Consumo de Energia · Singapura Shopping · Caldas Novas — GO</div>`;
+}
+
+// PDF — Evolução de Consumo por Período
+function exportarEvolucaoPDF() {
+  const periodos = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const rows = periodos.map((p, i) => {
+    const kwh = leituras.filter(l=>l.periodo===p).reduce((s,l)=>s+(Number(l.consumo)||0),0);
+    const val = leituras.filter(l=>l.periodo===p).reduce((s,l)=>s+(Number(l.valor)||0),0);
+    const prev = i > 0 ? leituras.filter(l=>l.periodo===periodos[i-1]).reduce((s,l)=>s+(Number(l.consumo)||0),0) : null;
+    const pc = prev ? pct(kwh, prev) : null;
+    const varS = pc===null ? '—' : `<span class="${pc>0?'up':'down'}">${pc>0?'▲':'▼'} ${Math.abs(pc).toFixed(1)}%</span>`;
+    return `<tr><td>${PERIODOS_LABEL[p]||p}</td><td style="text-align:right;font-weight:700">${fmt(kwh,2)}</td><td style="text-align:right;font-weight:700">${fmtR(val)}</td><td style="text-align:right">${fmtR(kwh>0?val/kwh:0).replace('R$ ','R$ ')}</td><td style="text-align:center">${varS}</td></tr>`;
+  });
+  const totalKwh = periodos.reduce((s,p)=>s+leituras.filter(l=>l.periodo===p).reduce((s2,l)=>s2+(Number(l.consumo)||0),0),0);
+  const totalVal = periodos.reduce((s,p)=>s+leituras.filter(l=>l.periodo===p).reduce((s2,l)=>s2+(Number(l.valor)||0),0),0);
+
+  abrirJanelaPDF(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Evolução de Consumo</title>${estiloBasePDF()}</head><body>
+    ${cabecalhoPDF('Evolução de Consumo por Período', 'Consumo total de energia elétrica — todos os estabelecimentos por período')}
+    <table><thead><tr><th>Período</th><th style="text-align:right">Consumo (kWh)</th><th style="text-align:right">Valor (R$)</th><th style="text-align:right">Tarifa Média</th><th style="text-align:center">Variação</th></tr></thead>
+    <tbody>${rows.join('')}</tbody>
+    <tfoot><tr><td>TOTAL</td><td style="text-align:right">${fmt(totalKwh,2)} kWh</td><td style="text-align:right">${fmtR(totalVal)}</td><td></td><td></td></tr></tfoot>
+    </table>${rodapePDF()}</body></html>`);
+}
+
+// PDF — Ranking
+function exportarRankingPDF() {
+  const periodos = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const ultimoPer = periodos[periodos.length-1];
+  const fevLeit = leituras.filter(l=>l.periodo===ultimoPer);
+  const ranking = lojas.map(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    const ult = ls[ls.length-1]; const ant = ls[ls.length-2];
+    if (!ult) return null;
+    return { loja, leitura: ult, anterior: ant };
+  }).filter(Boolean).sort((a,b)=>b.leitura.consumo-a.leitura.consumo);
+  const totalKwh = ranking.reduce((s,x)=>s+(Number(x.leitura.consumo)||0),0);
+  const totalVal = ranking.reduce((s,x)=>s+(Number(x.leitura.valor)||0),0);
+
+  abrirJanelaPDF(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ranking de Consumo</title>${estiloBasePDF()}</head><body>
+    ${cabecalhoPDF('Ranking de Consumo', `Período: ${PERIODOS_LABEL[ultimoPer]||ultimoPer} · Ordenado por maior consumo`)}
+    <table><thead><tr><th>#</th><th>Estabelecimento</th><th>Tipo</th><th style="text-align:right">Consumo (kWh)</th><th style="text-align:right">Tarifa</th><th style="text-align:right">Valor (R$)</th><th style="text-align:center">vs Anterior</th></tr></thead>
+    <tbody>${ranking.map((x,i)=>{
+      const pc = x.anterior ? pct(x.leitura.consumo,x.anterior.consumo) : null;
+      const varS = pc===null?'—':`<span class="${pc>0?'up':'down'}">${pc>0?'▲':'▼'} ${Math.abs(pc).toFixed(1)}%</span>`;
+      return `<tr><td style="text-align:center;font-weight:700">${i+1}</td><td><strong>${x.loja.nome}</strong></td><td>${x.loja.tipo==='GRID'?'<span class="badge-grid">GRID</span>':'<span class="badge-eq">EQ</span>'}</td><td style="text-align:right;font-weight:700">${fmt(x.leitura.consumo,2)}</td><td style="text-align:right">R$ ${fmt(x.leitura.tarifa,3)}</td><td style="text-align:right;font-weight:700">${fmtR(x.leitura.valor)}</td><td style="text-align:center">${varS}</td></tr>`;
+    }).join('')}</tbody>
+    <tfoot><tr><td colspan="3">TOTAL</td><td style="text-align:right">${fmt(totalKwh,2)} kWh</td><td></td><td style="text-align:right">${fmtR(totalVal)}</td><td></td></tr></tfoot>
+    </table>${rodapePDF()}</body></html>`);
+}
+
+// PDF — GRID vs Equatorial
+function exportarGridEqPDF() {
+  const periodos = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const rows = periodos.map(p => {
+    const gKwh = leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+    const gVal = leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.valor)||0),0);
+    const eKwh = leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+    const eVal = leituras.filter(l=>l.periodo===p&&getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.valor)||0),0);
+    return `<tr><td>${PERIODOS_LABEL[p]||p}</td><td style="text-align:right">${fmt(gKwh,2)}</td><td style="text-align:right">${fmtR(gVal)}</td><td style="text-align:right">${fmt(eKwh,2)}</td><td style="text-align:right">${fmtR(eVal)}</td><td style="text-align:right;font-weight:700">${fmt(gKwh+eKwh,2)}</td><td style="text-align:right;font-weight:700">${fmtR(gVal+eVal)}</td></tr>`;
+  });
+
+  abrirJanelaPDF(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>GRID vs Equatorial</title>${estiloBasePDF()}</head><body>
+    ${cabecalhoPDF('GRID vs Equatorial', 'Consumo e custo por tipo de medição — todos os períodos')}
+    <table><thead><tr><th>Período</th><th style="text-align:right">GRID kWh</th><th style="text-align:right">GRID R$</th><th style="text-align:right">Equatorial kWh</th><th style="text-align:right">Equatorial R$</th><th style="text-align:right">Total kWh</th><th style="text-align:right">Total R$</th></tr></thead>
+    <tbody>${rows.join('')}</tbody></table>${rodapePDF()}</body></html>`);
+}
+
+// PDF — Alertas do Dashboard
+function exportarAlertasDashPDF() {
+  const limite = config.alerta || 20;
+  const todosPer = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const alertas = [];
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    for (let i = 1; i < ls.length; i++) {
+      const idxAt  = todosPer.indexOf(ls[i].periodo);
+      const idxAnt = todosPer.indexOf(ls[i-1].periodo);
+      if (idxAt - idxAnt !== 1) continue;
+      const p = pct(ls[i].consumo, ls[i-1].consumo);
+      if (p !== null && Math.abs(p) > limite)
+        alertas.push({ loja, atual: ls[i], anterior: ls[i-1], variacao: p, tipo: p>0?'aumento':'queda', impacto: ls[i].valor-ls[i-1].valor });
+    }
+  });
+  alertas.sort((a,b) => Math.abs(b.variacao) - Math.abs(a.variacao));
+
+  abrirJanelaPDF(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Alertas de Variação</title>${estiloBasePDF()}</head><body>
+    ${cabecalhoPDF('Alertas de Variação de Consumo', `Variações acima de ${limite}% entre meses consecutivos · ${alertas.length} alertas encontrados`)}
+    ${alertas.length===0 ? '<p style="color:#8a9ab0;padding:16px">Nenhum alerta encontrado.</p>' : `
+    <table><thead><tr><th>Estabelecimento</th><th>Tipo</th><th>Período Ant.</th><th style="text-align:right">Consumo Ant.</th><th>Período Atual</th><th style="text-align:right">Consumo Atual</th><th style="text-align:center">Variação</th><th style="text-align:right">Impacto R$</th></tr></thead>
+    <tbody>${alertas.map(a=>`<tr>
+      <td><strong>${a.loja.nome}</strong></td>
+      <td>${a.loja.tipo==='GRID'?'<span class="badge-grid">GRID</span>':'<span class="badge-eq">EQ</span>'}</td>
+      <td>${PERIODOS_LABEL[a.anterior.periodo]||a.anterior.periodo}</td>
+      <td style="text-align:right">${fmt(a.anterior.consumo,2)}</td>
+      <td>${PERIODOS_LABEL[a.atual.periodo]||a.atual.periodo}</td>
+      <td style="text-align:right;font-weight:700">${fmt(a.atual.consumo,2)}</td>
+      <td style="text-align:center"><span class="${a.tipo==='aumento'?'up':'down'}">${a.tipo==='aumento'?'▲':'▼'} ${Math.abs(a.variacao).toFixed(1)}%</span></td>
+      <td style="text-align:right"><span class="${a.impacto>0?'up':'down'}">${a.impacto>0?'+':''}${fmtR(a.impacto)}</span></td>
+    </tr>`).join('')}</tbody></table>`}
+    ${rodapePDF()}</body></html>`);
 }
 
 // ============================================================

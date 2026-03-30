@@ -277,6 +277,13 @@ select option{background:var(--bg3)}
 
   <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
+    <!-- Botão Visão Geral -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+      <button class="btn btn-secondary" onclick="toggleRelVisaoGeral()" id="btnVisaoGeral">
+        📋 Mostrar Relatório de Visão Geral
+      </button>
+    </div>
+
     <div id="setupBanner" class="setup-banner" style="display:none">
       <div class="setup-banner-icon" style="font-size:22px;color:var(--accent)">⬡</div>
       <div style="flex:1">
@@ -537,6 +544,60 @@ select option{background:var(--bg3)}
         </table>
       </div>
     </div>
+
+    <!-- RELATÓRIO VISÃO GERAL INLINE -->
+    <div id="relVisaoGeralInline" style="display:none;margin-top:20px">
+
+      <!-- Header do relatório -->
+      <div style="background:linear-gradient(135deg,#1a2332,#1a6fd4);border-radius:var(--radius);padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:10px;color:rgba(255,255,255,.6);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Relatório Consolidado</div>
+          <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:#fff">Visão Geral do Dashboard</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px" id="rvgPeriodo">—</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="exportarVisaoGeral()">📥 Exportar PDF</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleRelVisaoGeral()">✕ Fechar</button>
+        </div>
+      </div>
+
+      <!-- KPIs Principais -->
+      <div style="margin-bottom:10px;font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px">KPIs Principais</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px" id="rvgKpisPrincipais"></div>
+
+      <!-- KPIs Operacionais -->
+      <div style="margin-bottom:10px;font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px">KPIs Operacionais</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px" id="rvgKpisOper"></div>
+
+      <!-- GRID vs EQ + Alertas -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+        <div class="card">
+          <div class="card-header"><span class="card-title">GRID vs Equatorial</span><span class="badge badge-blue" id="rvgGridPer">—</span></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Tipo</th><th>Lojas</th><th>Consumo kWh</th><th>Valor R$</th><th>R$/kWh</th></tr></thead>
+            <tbody id="rvgTbodyGrid"></tbody></table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Top Alertas de Variação</span><span class="badge badge-danger" id="rvgAlertasBadge">0</span></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Loja</th><th>Variação</th><th>De (kWh)</th><th>Para (kWh)</th></tr></thead>
+            <tbody id="rvgTbodyAlertas"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ranking Top 5 -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Ranking — Top 5 Maiores Consumidores</span><span class="badge badge-blue" id="rvgRankPer">—</span></div>
+        <div class="table-wrap">
+          <table><thead><tr><th>#</th><th>Estabelecimento</th><th>Tipo</th><th>Consumo kWh</th><th>Valor R$</th><th>vs Anterior</th></tr></thead>
+          <tbody id="rvgTbodyRanking"></tbody></table>
+        </div>
+      </div>
+
+    </div><!-- /relVisaoGeralInline -->
+
   </div>
 
   <!-- TARIFAS -->
@@ -2363,6 +2424,185 @@ function salvarTarifaPadrao() {
   config.eqTarifa   = Number(document.getElementById('tarifaPadraoEq').value)||1.039051;
   save();
   toast('Tarifas padrão salvas!');
+}
+
+// ============================================================
+//  VISÃO GERAL INLINE
+// ============================================================
+function toggleRelVisaoGeral() {
+  const el  = document.getElementById('relVisaoGeralInline');
+  const btn = document.getElementById('btnVisaoGeral');
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    btn.textContent  = '📋 Ocultar Relatório de Visão Geral';
+    renderRelVisaoGeralInline();
+    setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  } else {
+    el.style.display = 'none';
+    btn.textContent  = '📋 Mostrar Relatório de Visão Geral';
+  }
+}
+
+function renderRelVisaoGeralInline() {
+  const todosPer3  = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const ultimoPer  = todosPer3[todosPer3.length - 1];
+  const penultPer  = todosPer3[todosPer3.length - 2];
+  const fevL2      = leituras.filter(l => l.periodo === ultimoPer);
+  const janL2      = leituras.filter(l => l.periodo === penultPer);
+  const kwhAt2     = fevL2.reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const valAt2     = fevL2.reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const kwhAnt2    = janL2.reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const valAnt2    = janL2.reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const ativos3    = lojas.filter(l=>l.status==='ativo').length;
+  const limite3    = config.alerta || 20;
+  const perLabel   = (PERIODOS_LABEL[ultimoPer]||ultimoPer) + (penultPer ? ' · vs ' + (PERIODOS_LABEL[penultPer]||penultPer) : '');
+
+  document.getElementById('rvgPeriodo').textContent   = 'Período de referência: ' + perLabel;
+  document.getElementById('rvgGridPer').textContent   = PERIODOS_LABEL[ultimoPer]||ultimoPer;
+  document.getElementById('rvgRankPer').textContent   = PERIODOS_LABEL[ultimoPer]||ultimoPer;
+
+  const pctKwh3 = pct(kwhAt2, kwhAnt2);
+  const pctVal3 = pct(valAt2, valAnt2);
+
+  // Alertas
+  const alertas4 = [];
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    for (let i = 1; i < ls.length; i++) {
+      const ia = todosPer3.indexOf(ls[i].periodo), ib = todosPer3.indexOf(ls[i-1].periodo);
+      if (ia - ib !== 1) continue;
+      const p = pct(ls[i].consumo, ls[i-1].consumo);
+      if (p !== null && Math.abs(p) > limite3)
+        alertas4.push({ loja, atual: ls[i], anterior: ls[i-1], variacao: p, tipo: p>0?'aumento':'queda' });
+    }
+  });
+  document.getElementById('rvgAlertasBadge').textContent = alertas4.length;
+
+  // Lojas sem leitura / media / economia / crescimento / projeção
+  const lojasComL2  = new Set(fevL2.map(l=>l.estabId));
+  const lojasSemL2  = lojas.filter(l=>l.status==='ativo'&&!lojasComL2.has(l.id));
+  const mediaKwh3   = lojasComL2.size > 0 ? kwhAt2 / lojasComL2.size : 0;
+  const mediaKwhJ3  = janL2.length > 0 ? kwhAnt2 / new Set(janL2.map(l=>l.estabId)).size : 0;
+  let maiorCrescL3 = null, maiorCrescP3 = 0;
+  let econKwh3 = 0, lojasEcon3 = 0;
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    if (ls.length < 2) return;
+    const ult = ls[ls.length-1], pen = ls[ls.length-2];
+    const ia = todosPer3.indexOf(ult.periodo), ib = todosPer3.indexOf(pen.periodo);
+    if (ia - ib !== 1) return;
+    const p = pct(ult.consumo, pen.consumo);
+    if (p !== null && p > maiorCrescP3) { maiorCrescP3 = p; maiorCrescL3 = loja; }
+    if (ult.consumo < pen.consumo) { econKwh3 += pen.consumo - ult.consumo; lojasEcon3++; }
+  });
+  const ult3per2   = todosPer3.slice(-3);
+  const mediaUlt33 = ult3per2.length > 0 ? ult3per2.reduce((s,p)=>s+leituras.filter(l=>l.periodo===p).reduce((s2,l)=>s2+(Number(l.consumo)||0),0),0) / ult3per2.length : 0;
+  const pctProj2   = kwhAt2 > 0 ? pct(mediaUlt33, kwhAt2) : null;
+  const tendProj2  = pctProj2 === null ? '—' : Math.abs(pctProj2) < 3 ? '➡ Estável' : pctProj2 > 0 ? '▲ Aumento' : '▼ Queda';
+  const corProj2   = pctProj2 === null ? 'var(--text3)' : Math.abs(pctProj2) < 3 ? 'var(--text3)' : pctProj2 > 0 ? 'var(--danger)' : 'var(--green)';
+
+  // Render KPIs Principais
+  const kpiStyle = (cor) => `background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;border-top:3px solid ${cor}`;
+  document.getElementById('rvgKpisPrincipais').innerHTML = `
+    <div style="${kpiStyle('#6c63ff')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Consumo Total</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text)">${fmt(kwhAt2,1)} <span style="font-size:12px;color:var(--text3)">kWh</span></div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">${PERIODOS_LABEL[ultimoPer]||ultimoPer}</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:${pctKwh3>0?'var(--danger)':'var(--green)'}">${pctKwh3!==null?(pctKwh3>0?'▲':'▼')+Math.abs(pctKwh3).toFixed(1)+'% vs anterior':'—'}</div>
+    </div>
+    <div style="${kpiStyle('#f59e0b')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Valor Total</div>
+      <div style="font-size:22px;font-weight:700;color:var(--text)">${fmtR(valAt2)}</div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">${PERIODOS_LABEL[ultimoPer]||ultimoPer}</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:${pctVal3>0?'var(--danger)':'var(--green)'}">${pctVal3!==null?(pctVal3>0?'▲':'▼')+Math.abs(pctVal3).toFixed(1)+'% vs anterior':'—'}</div>
+    </div>
+    <div style="${kpiStyle('#38bdf8')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Lojas Ativas</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text)">${ativos3}</div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">${lojas.length} cadastradas</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:${lojasSemL2.length>0?'var(--danger)':'var(--green)'}">${lojasSemL2.length===0?'✓ Todas registradas':'⚠ '+lojasSemL2.length+' sem leitura'}</div>
+    </div>
+    <div style="${kpiStyle('#ef4444')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Alertas</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text)">${alertas4.length}</div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">variação > ${limite3}%</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--text3)">${alertas4.filter(a=>a.tipo==='aumento').length} ↑ · ${alertas4.filter(a=>a.tipo==='queda').length} ↓</div>
+    </div>`;
+
+  // Render KPIs Operacionais
+  document.getElementById('rvgKpisOper').innerHTML = `
+    <div style="${kpiStyle('#34d399')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Média por Loja</div>
+      <div style="font-size:22px;font-weight:700;color:var(--text)">${fmt(mediaKwh3,1)}</div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">kWh / loja</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:${pct(mediaKwh3,mediaKwhJ3)>0?'var(--danger)':'var(--green)'}">${deltaHtml(pct(mediaKwh3,mediaKwhJ3))}</div>
+    </div>
+    <div style="${kpiStyle('#fb923c')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Maior Crescimento</div>
+      <div style="font-size:22px;font-weight:700;color:var(--danger)">${maiorCrescL3?'+'+maiorCrescP3.toFixed(1)+'%':'—'}</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin:3px 0">${maiorCrescL3?.nome||'—'}</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--danger)">${maiorCrescL3?'▲ vs mês anterior':''}</div>
+    </div>
+    <div style="${kpiStyle('#ef4444')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Sem Leitura</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text)">${lojasSemL2.length}</div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">lojas sem registro</div>
+      <div style="font-size:10px;font-family:'DM Mono',monospace;color:var(--text3)">${lojasSemL2.map(l=>l.nome).join(', ')||'✓ Todas ok'}</div>
+    </div>
+    <div style="${kpiStyle('#a78bfa')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Projeção Próx. Mês</div>
+      <div style="font-size:22px;font-weight:700;color:var(--text)">${fmt(mediaUlt33,1)}</div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">kWh estimado</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:${corProj2}">${tendProj2} ${pctProj2!==null?Math.abs(pctProj2).toFixed(1)+'%':''}</div>
+    </div>
+    <div style="${kpiStyle('#34d399')}">
+      <div style="font-size:9px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Economia Gerada</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text)">${lojasEcon3}</div>
+      <div style="font-size:11px;color:var(--text3);margin:3px 0">lojas economizaram</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--green)">▼ ${fmt(econKwh3,1)} kWh</div>
+    </div>`;
+
+  // GRID vs EQ
+  const gKwh3 = fevL2.filter(l=>getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const gVal3 = fevL2.filter(l=>getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const eKwh3 = fevL2.filter(l=>getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const eVal3 = fevL2.filter(l=>getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.valor)||0),0);
+
+  document.getElementById('rvgTbodyGrid').innerHTML = `
+    <tr><td><span class="badge badge-blue">GRID</span></td><td class="td-mono">${lojas.filter(l=>l.tipo==='GRID').length}</td><td class="td-mono" style="color:var(--accent)">${fmt(gKwh3,2)}</td><td class="td-mono" style="color:var(--warn)">${fmtR(gVal3)}</td><td class="td-mono">R$ ${gKwh3>0?fmt(gVal3/gKwh3,4):'—'}</td></tr>
+    <tr><td><span class="badge badge-purple">Equatorial</span></td><td class="td-mono">${lojas.filter(l=>l.tipo==='EQUATORIAL').length}</td><td class="td-mono" style="color:var(--accent)">${fmt(eKwh3,2)}</td><td class="td-mono" style="color:var(--warn)">${fmtR(eVal3)}</td><td class="td-mono">R$ ${eKwh3>0?fmt(eVal3/eKwh3,4):'—'}</td></tr>
+    <tr style="background:var(--bg3)"><td style="font-weight:700">TOTAL</td><td class="td-mono">${lojas.length}</td><td class="td-mono" style="font-weight:700;color:var(--accent)">${fmt(kwhAt2,2)}</td><td class="td-mono" style="font-weight:700;color:var(--warn)">${fmtR(valAt2)}</td><td class="td-mono">R$ ${kwhAt2>0?fmt(valAt2/kwhAt2,4):'—'}</td></tr>`;
+
+  // Alertas
+  const alertasOrd2 = [...alertas4].sort((a,b)=>Math.abs(b.variacao)-Math.abs(a.variacao)).slice(0,5);
+  document.getElementById('rvgTbodyAlertas').innerHTML = alertasOrd2.length === 0
+    ? '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:16px">Nenhum alerta</td></tr>'
+    : alertasOrd2.map(a=>`<tr>
+        <td style="font-weight:600">${a.loja.nome}</td>
+        <td>${a.tipo==='aumento'?'<span class="badge badge-danger">▲ '+Math.abs(a.variacao).toFixed(1)+'%</span>':'<span class="badge badge-green">▼ '+Math.abs(a.variacao).toFixed(1)+'%</span>'}</td>
+        <td class="td-mono">${fmt(a.anterior.consumo,1)}</td>
+        <td class="td-mono" style="color:${a.tipo==='aumento'?'var(--danger)':'var(--green)'};font-weight:700">${fmt(a.atual.consumo,1)}</td>
+      </tr>`).join('');
+
+  // Ranking Top 5
+  const ranking4 = lojas.map(loja=>{
+    const ls=getLeitsByLoja(loja.id); const ult=ls[ls.length-1]; const ant=ls[ls.length-2];
+    if(!ult) return null; return{loja,leitura:ult,anterior:ant};
+  }).filter(Boolean).sort((a,b)=>b.leitura.consumo-a.leitura.consumo).slice(0,5);
+
+  document.getElementById('rvgTbodyRanking').innerHTML = ranking4.map((x,i)=>{
+    const pc3 = x.anterior ? pct(x.leitura.consumo,x.anterior.consumo) : null;
+    const vs  = pc3===null ? '—' : pc3>0 ? `<span class="delta-pos">▲${pc3.toFixed(1)}%</span>` : `<span class="delta-neg">▼${Math.abs(pc3).toFixed(1)}%</span>`;
+    const med = ['🥇','🥈','🥉','4º','5º'][i];
+    return `<tr>
+      <td style="text-align:center;font-size:16px">${med}</td>
+      <td style="font-weight:600">${x.loja.nome}</td>
+      <td>${x.loja.tipo==='GRID'?'<span class="badge badge-blue">GRID</span>':'<span class="badge badge-purple">EQ</span>'}</td>
+      <td class="td-mono" style="color:var(--accent);font-weight:700">${fmt(x.leitura.consumo,2)}</td>
+      <td class="td-mono" style="color:var(--warn)">${fmtR(x.leitura.valor)}</td>
+      <td>${vs}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ============================================================

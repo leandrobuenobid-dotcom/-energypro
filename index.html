@@ -346,7 +346,13 @@ select option{background:var(--bg3)}
         <div class="dkc-label">PROJEÇÃO PRÓX. MÊS</div>
         <div class="dkc-value" id="kpi-projecao">—</div>
         <div class="dkc-unit">kWh estimado</div>
-        <div class="dkc-delta neutral" id="kpi-projecao-d">—</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+          <div id="kpi-projecao-icone" style="font-size:22px;line-height:1"></div>
+          <div>
+            <div class="dkc-delta" id="kpi-projecao-d">—</div>
+            <div style="font-size:10px;font-family:'DM Mono',monospace;color:var(--text3)" id="kpi-projecao-tend">—</div>
+          </div>
+        </div>
       </div>
       <div class="dash-kpi-card" style="border-top:3px solid #34d399">
         <div class="dkc-label">ECONOMIA GERADA</div>
@@ -1214,7 +1220,23 @@ function renderDashboard() {
     : '<span class="dkc-delta up">' + lojasSemLeitura.map(l=>l.nome).join(', ') + '</span>';
 
   document.getElementById('kpi-projecao').innerHTML = fmt(mediaUlt3, 1) + '<span style="font-size:14px;margin-left:3px;color:var(--text3)">kWh</span>';
-  document.getElementById('kpi-projecao-d').innerHTML = `<span class="dkc-delta neutral">média últimos ${ultimos3per.length} meses</span>`;
+  // Tendência: compara projeção com o último mês real
+  const pctProjecao = kwhFev > 0 ? pct(mediaUlt3, kwhFev) : null;
+  if (pctProjecao !== null) {
+    const isAumento = pctProjecao > 0;
+    const isEstavel = Math.abs(pctProjecao) < 3;
+    const icone  = isEstavel ? '➡️' : isAumento ? '📈' : '📉';
+    const cor    = isEstavel ? 'var(--text3)' : isAumento ? 'var(--danger)' : 'var(--green)';
+    const seta   = isEstavel ? '→' : isAumento ? '▲' : '▼';
+    const texto  = isEstavel ? 'Consumo estável' : isAumento ? 'Tendência de aumento' : 'Tendência de queda';
+    document.getElementById('kpi-projecao-icone').textContent = icone;
+    document.getElementById('kpi-projecao-d').innerHTML = `<span style="color:${cor};font-size:11px;font-family:DM Mono,monospace;font-weight:700">${seta} ${Math.abs(pctProjecao).toFixed(1)}% vs atual</span>`;
+    document.getElementById('kpi-projecao-tend').textContent = texto;
+  } else {
+    document.getElementById('kpi-projecao-icone').textContent = '➡️';
+    document.getElementById('kpi-projecao-d').innerHTML = `<span class="dkc-delta neutral">média últimos ${ultimos3per.length} meses</span>`;
+    document.getElementById('kpi-projecao-tend').textContent = 'sem base comparativa';
+  }
 
   document.getElementById('kpi-economia').textContent = lojasEconomizaram;
   document.getElementById('kpi-economia-d').innerHTML = lojasEconomizaram > 0
@@ -2341,6 +2363,263 @@ function salvarTarifaPadrao() {
   config.eqTarifa   = Number(document.getElementById('tarifaPadraoEq').value)||1.039051;
   save();
   toast('Tarifas padrão salvas!');
+}
+
+// ============================================================
+//  VISÃO GERAL — RELATÓRIO RESUMIDO
+// ============================================================
+function exportarVisaoGeral() {
+  const todosPer2  = PERIODOS_ORDER.filter(p => leituras.some(l => l.periodo === p));
+  const ultimoPer  = todosPer2[todosPer2.length - 1];
+  const penultPer  = todosPer2[todosPer2.length - 2];
+  const fevL       = leituras.filter(l => l.periodo === ultimoPer);
+  const janL       = leituras.filter(l => l.periodo === penultPer);
+  const kwhAt      = fevL.reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const valAt      = fevL.reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const kwhAnt     = janL.reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const valAnt     = janL.reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const ativos2    = lojas.filter(l=>l.status==='ativo').length;
+  const limite2    = config.alerta || 20;
+  const dataGer    = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  // Alertas
+  const alertas3 = [];
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    for (let i = 1; i < ls.length; i++) {
+      const ia = todosPer2.indexOf(ls[i].periodo), ib = todosPer2.indexOf(ls[i-1].periodo);
+      if (ia - ib !== 1) continue;
+      const p = pct(ls[i].consumo, ls[i-1].consumo);
+      if (p !== null && Math.abs(p) > limite2)
+        alertas3.push({ loja, atual: ls[i], anterior: ls[i-1], variacao: p, tipo: p>0?'aumento':'queda' });
+    }
+  });
+
+  // Média por loja
+  const lojasComL  = new Set(fevL.map(l=>l.estabId));
+  const mediaKwh2  = lojasComL.size > 0 ? kwhAt / lojasComL.size : 0;
+  const lojasSemL  = lojas.filter(l=>l.status==='ativo'&&!lojasComL.has(l.id));
+
+  // Maior crescimento
+  let maiorCrescL2 = null, maiorCrescP2 = 0;
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    if (ls.length < 2) return;
+    const ult = ls[ls.length-1], pen = ls[ls.length-2];
+    const ia = todosPer2.indexOf(ult.periodo), ib = todosPer2.indexOf(pen.periodo);
+    if (ia - ib !== 1) return;
+    const p = pct(ult.consumo, pen.consumo);
+    if (p !== null && p > maiorCrescP2) { maiorCrescP2 = p; maiorCrescL2 = loja; }
+  });
+
+  // Economia
+  let econKwh2 = 0, lojasEcon2 = 0;
+  lojas.forEach(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    if (ls.length < 2) return;
+    const ult = ls[ls.length-1], pen = ls[ls.length-2];
+    const ia = todosPer2.indexOf(ult.periodo), ib = todosPer2.indexOf(pen.periodo);
+    if (ia - ib !== 1) return;
+    if (ult.consumo < pen.consumo) { econKwh2 += pen.consumo - ult.consumo; lojasEcon2++; }
+  });
+
+  // Projeção
+  const ult3per   = todosPer2.slice(-3);
+  const mediaUlt32 = ult3per.length > 0
+    ? ult3per.reduce((s,p)=>s+leituras.filter(l=>l.periodo===p).reduce((s2,l)=>s2+(Number(l.consumo)||0),0),0) / ult3per.length : 0;
+  const pctProj   = kwhAt > 0 ? pct(mediaUlt32, kwhAt) : null;
+  const tendProj  = pctProj === null ? '—' : Math.abs(pctProj) < 3 ? '➡ Estável' : pctProj > 0 ? '▲ Aumento' : '▼ Queda';
+
+  // GRID vs EQ
+  const gKwh2 = fevL.filter(l=>getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const gVal2 = fevL.filter(l=>getLoja(l.estabId)?.tipo==='GRID').reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const eKwh2 = fevL.filter(l=>getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.consumo)||0),0);
+  const eVal2 = fevL.filter(l=>getLoja(l.estabId)?.tipo==='EQUATORIAL').reduce((s,l)=>s+(Number(l.valor)||0),0);
+
+  // Ranking top 5
+  const ranking3 = lojas.map(loja => {
+    const ls = getLeitsByLoja(loja.id);
+    const ult = ls[ls.length-1], ant = ls[ls.length-2];
+    if (!ult) return null;
+    return { loja, leitura: ult, anterior: ant };
+  }).filter(Boolean).sort((a,b)=>b.leitura.consumo-a.leitura.consumo).slice(0,5);
+
+  const pctKwh2 = pct(kwhAt, kwhAnt);
+  const pctVal2 = pct(valAt, valAnt);
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Visão Geral — Singapura Shopping</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;color:#1a2332;padding:24px;font-size:12px;background:#fff}
+.no-print{margin-bottom:16px;display:flex;gap:10px}
+.btn-back{display:inline-flex;align-items:center;gap:8px;background:#1a6fd4;color:#fff;padding:8px 16px;border-radius:7px;text-decoration:none;font-size:12px;font-weight:700}
+.btn-print{display:inline-flex;align-items:center;gap:8px;background:#e67e00;color:#fff;padding:8px 16px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700}
+.header{background:linear-gradient(135deg,#1a2332,#1a6fd4);color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:20px;font-weight:700;margin-bottom:3px}
+.header p{font-size:11px;opacity:.8}
+.header-right{text-align:right;font-size:11px;opacity:.8}
+.header-right strong{font-size:16px;display:block;opacity:1}
+/* KPI GRID */
+.kpi-row{display:grid;gap:10px;margin-bottom:14px}
+.kpi-row-4{grid-template-columns:repeat(4,1fr)}
+.kpi-row-5{grid-template-columns:repeat(5,1fr)}
+.kpi{background:#f8fafc;border-radius:8px;padding:12px 14px;border-left:4px solid #1a6fd4;position:relative}
+.kpi.green{border-left-color:#16a34a}.kpi.orange{border-left-color:#e67e00}
+.kpi.red{border-left-color:#ef4444}.kpi.purple{border-left-color:#7c3aed}
+.kpi.cyan{border-left-color:#0ea5e9}.kpi.teal{border-left-color:#14b8a6}
+.kpi-label{font-size:9px;color:#8a9ab0;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
+.kpi-value{font-size:20px;font-weight:800;color:#1a2332;line-height:1;margin-bottom:3px}
+.kpi-sub{font-size:10px;color:#8a9ab0;margin-bottom:3px}
+.kpi-delta{font-size:10px;font-weight:700}
+.up{color:#ef4444}.down{color:#16a34a}.neutral{color:#8a9ab0}
+/* SECTION */
+.section{margin-bottom:16px}
+.section-title{font-size:12px;font-weight:700;color:#1a2332;border-left:4px solid #1a6fd4;padding-left:8px;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px}
+/* GRID 2 */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+/* TABLE */
+table{width:100%;border-collapse:collapse;font-size:11px}
+thead th{background:#1a2332;color:#fff;padding:7px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+tbody tr:nth-child(even){background:#f8fafc}
+tbody td{padding:6px 8px;border-bottom:1px solid #e8edf3}
+/* ALERT BADGES */
+.badge-up{background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.badge-down{background:#dcfce7;color:#166534;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.badge-grid{background:#e0f7fe;color:#0369a1;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.badge-eq{background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+/* FOOTER */
+.footer{margin-top:16px;font-size:10px;color:#8a9ab0;text-align:center;border-top:1px solid #e8edf3;padding-top:10px}
+@media print{.no-print{display:none!important}body{padding:14px}}
+</style></head><body>
+
+<div class="no-print">
+  <a href="javascript:window.close()" class="btn-back">← Voltar ao Sistema</a>
+  <button onclick="window.print()" class="btn-print">🖨️ Imprimir / Salvar PDF</button>
+</div>
+
+<div class="header">
+  <div>
+    <h1>⚡ Singapura Shopping — Visão Geral do Dashboard</h1>
+    <p>Período de referência: ${PERIODOS_LABEL[ultimoPer]||ultimoPer} · Comparativo: ${PERIODOS_LABEL[penultPer]||penultPer||'—'}</p>
+  </div>
+  <div class="header-right">
+    <strong>EnergyPro</strong>
+    Gerado em: ${dataGer}
+  </div>
+</div>
+
+<!-- KPIs PRINCIPAIS -->
+<div class="section">
+  <div class="section-title">KPIs Principais</div>
+  <div class="kpi-row kpi-row-4">
+    <div class="kpi">
+      <div class="kpi-label">Consumo Total</div>
+      <div class="kpi-value">${fmt(kwhAt,1)} <span style="font-size:12px;color:#8a9ab0">kWh</span></div>
+      <div class="kpi-sub">Período: ${PERIODOS_LABEL[ultimoPer]||ultimoPer}</div>
+      <div class="kpi-delta ${pctKwh2>0?'up':'down'}">${pctKwh2!==null?(pctKwh2>0?'▲':'▼')+Math.abs(pctKwh2).toFixed(1)+'% vs anterior':'—'}</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-label">Valor Total</div>
+      <div class="kpi-value">${fmtR(valAt)}</div>
+      <div class="kpi-sub">Período: ${PERIODOS_LABEL[ultimoPer]||ultimoPer}</div>
+      <div class="kpi-delta ${pctVal2>0?'up':'down'}">${pctVal2!==null?(pctVal2>0?'▲':'▼')+Math.abs(pctVal2).toFixed(1)+'% vs anterior':'—'}</div>
+    </div>
+    <div class="kpi cyan">
+      <div class="kpi-label">Lojas Ativas</div>
+      <div class="kpi-value">${ativos2}</div>
+      <div class="kpi-sub">${lojas.length} cadastradas</div>
+      <div class="kpi-delta neutral">${lojasSemL.length} sem leitura</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-label">Alertas de Consumo</div>
+      <div class="kpi-value">${alertas3.length}</div>
+      <div class="kpi-sub">variação > ${limite2}%</div>
+      <div class="kpi-delta neutral">${alertas3.filter(a=>a.tipo==='aumento').length} ↑ aumento · ${alertas3.filter(a=>a.tipo==='queda').length} ↓ queda</div>
+    </div>
+  </div>
+</div>
+
+<!-- KPIs SECUNDÁRIOS -->
+<div class="section">
+  <div class="section-title">KPIs Operacionais</div>
+  <div class="kpi-row kpi-row-5">
+    <div class="kpi green">
+      <div class="kpi-label">Média por Loja</div>
+      <div class="kpi-value">${fmt(mediaKwh2,1)} <span style="font-size:12px;color:#8a9ab0">kWh</span></div>
+      <div class="kpi-sub">por estabelecimento</div>
+      <div class="kpi-delta neutral">${lojasComL.size} lojas com leitura</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-label">Maior Crescimento</div>
+      <div class="kpi-value">${maiorCrescL2 ? '+'+maiorCrescP2.toFixed(1)+'%' : '—'}</div>
+      <div class="kpi-sub" style="font-weight:700;color:#1a2332">${maiorCrescL2?.nome||'—'}</div>
+      <div class="kpi-delta up">${maiorCrescL2 ? '▲ vs mês anterior' : ''}</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-label">Sem Leitura</div>
+      <div class="kpi-value">${lojasSemL.length}</div>
+      <div class="kpi-sub">lojas sem registro</div>
+      <div class="kpi-delta neutral" style="font-size:9px">${lojasSemL.map(l=>l.nome).join(', ')||'Todas registradas ✓'}</div>
+    </div>
+    <div class="kpi purple">
+      <div class="kpi-label">Projeção Próx. Mês</div>
+      <div class="kpi-value">${fmt(mediaUlt32,1)} <span style="font-size:12px;color:#8a9ab0">kWh</span></div>
+      <div class="kpi-sub">média últimos ${ult3per.length} meses</div>
+      <div class="kpi-delta ${pctProj>0?'up':pctProj<0?'down':'neutral'}">${tendProj} ${pctProj!==null?Math.abs(pctProj).toFixed(1)+'%':''}</div>
+    </div>
+    <div class="kpi teal">
+      <div class="kpi-label">Economia Gerada</div>
+      <div class="kpi-value">${lojasEcon2}</div>
+      <div class="kpi-sub">lojas economizaram</div>
+      <div class="kpi-delta down">▼ ${fmt(econKwh2,1)} kWh reduzidos</div>
+    </div>
+  </div>
+</div>
+
+<!-- GRID 2: GRID vs EQ + ALERTAS -->
+<div class="grid2">
+  <div class="section">
+    <div class="section-title">GRID vs Equatorial — ${PERIODOS_LABEL[ultimoPer]||ultimoPer}</div>
+    <table><thead><tr><th>Tipo</th><th>Lojas</th><th>Consumo kWh</th><th>Valor R$</th><th>R$/kWh</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge-grid">GRID</span></td><td>${lojas.filter(l=>l.tipo==='GRID').length}</td><td>${fmt(gKwh2,2)}</td><td>${fmtR(gVal2)}</td><td>R$ ${gKwh2>0?fmt(gVal2/gKwh2,4):'—'}</td></tr>
+      <tr><td><span class="badge-eq">Equatorial</span></td><td>${lojas.filter(l=>l.tipo==='EQUATORIAL').length}</td><td>${fmt(eKwh2,2)}</td><td>${fmtR(eVal2)}</td><td>R$ ${eKwh2>0?fmt(eVal2/eKwh2,4):'—'}</td></tr>
+      <tr style="background:#1a2332;color:#fff"><td><strong>TOTAL</strong></td><td>${lojas.length}</td><td><strong>${fmt(kwhAt,2)}</strong></td><td><strong>${fmtR(valAt)}</strong></td><td>R$ ${kwhAt>0?fmt(valAt/kwhAt,4):'—'}</td></tr>
+    </tbody></table>
+  </div>
+  <div class="section">
+    <div class="section-title">Top Alertas de Variação</div>
+    <table><thead><tr><th>Loja</th><th>Variação</th><th>De</th><th>Para</th></tr></thead>
+    <tbody>${alertas3.sort((a,b)=>Math.abs(b.variacao)-Math.abs(a.variacao)).slice(0,5).map(a=>`
+      <tr><td><strong>${a.loja.nome}</strong></td>
+      <td><span class="${a.tipo==='aumento'?'badge-up':'badge-down'}">${a.tipo==='aumento'?'▲':'▼'} ${Math.abs(a.variacao).toFixed(1)}%</span></td>
+      <td>${fmt(a.anterior.consumo,1)} kWh</td>
+      <td>${fmt(a.atual.consumo,1)} kWh</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#8a9ab0">Nenhum alerta</td></tr>'}
+    </tbody></table>
+  </div>
+</div>
+
+<!-- RANKING TOP 5 -->
+<div class="section">
+  <div class="section-title">Ranking — Top 5 Maiores Consumidores (${PERIODOS_LABEL[ultimoPer]||ultimoPer})</div>
+  <table><thead><tr><th>#</th><th>Estabelecimento</th><th>Tipo</th><th>Consumo kWh</th><th>Valor R$</th><th>vs Anterior</th></tr></thead>
+  <tbody>${ranking3.map((x,i)=>{
+    const pc2 = x.anterior ? pct(x.leitura.consumo,x.anterior.consumo) : null;
+    const vs = pc2===null?'—':`<span class="${pc2>0?'up':'down'}">${pc2>0?'▲':'▼'} ${Math.abs(pc2).toFixed(1)}%</span>`;
+    return `<tr><td style="text-align:center;font-weight:700">${['🥇','🥈','🥉','4','5'][i]}</td>
+    <td><strong>${x.loja.nome}</strong></td>
+    <td>${x.loja.tipo==='GRID'?'<span class="badge-grid">GRID</span>':'<span class="badge-eq">EQ</span>'}</td>
+    <td style="font-weight:700">${fmt(x.leitura.consumo,2)}</td>
+    <td>${fmtR(x.leitura.valor)}</td><td>${vs}</td></tr>`;
+  }).join('')}
+  </tbody></table>
+</div>
+
+<div class="footer">EnergyPro · Sistema de Gestão de Consumo de Energia · Singapura Shopping · Caldas Novas — GO · Gerado em ${dataGer}</div>
+</body></html>`;
+
+  abrirJanelaPDF(html);
 }
 
 // ============================================================
